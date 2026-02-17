@@ -43,12 +43,11 @@ let cachedCairoFont = null;
         } catch (e) { }
     }
 
-    // STRATEGY B: Try Local and External sources (using Amiri font - more reliable)
+    // STRATEGY B: Try Local and External sources (using Cairo font - matches the file in folder)
     const sources = [
-        'Amiri-Regular.ttf',
-        'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf',
-        'https://cdn.jsdelivr.net/gh/aliftype/amiri@master/Amiri-Regular.ttf',
-        'https://cdn.jsdelivr.net/npm/@fontsource/amiri@4.5.0/files/amiri-all-400-normal.woff'
+        'alfont_com_Cairo-Regular.ttf',
+        'https://cdn.jsdelivr.net/gh/googlefonts/cairo@master/fonts/ttf/Cairo-Regular.ttf',
+        'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf'
     ];
     for (const url of sources) {
         try {
@@ -986,7 +985,10 @@ async function generatePdfFromTemplate(template, studentData) {
         if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
             try {
                 console.log("☁️ Attempting to load font from CloudDB...");
-                const cloudBase64 = await CloudDB.getFont('Amiri-Regular');
+                // Try Cairo first, then fallback
+                let cloudBase64 = await CloudDB.getFont('Cairo-Regular');
+                if (!cloudBase64) cloudBase64 = await CloudDB.getFont('Amiri-Regular');
+
                 if (cloudBase64) {
                     const binary = atob(cloudBase64);
                     const bytes = new Uint8Array(binary.length);
@@ -1006,10 +1008,9 @@ async function generatePdfFromTemplate(template, studentData) {
         // STRATEGY B: Fallback to External CDNs if cloud failed (using Amiri font - more reliable)
         if (!cachedCairoFont) {
             const fontSources = [
-                { id: 'Local', url: 'Amiri-Regular.ttf' },
-                { id: 'GStatic', url: 'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf' },
-                { id: 'CDN1', url: 'https://cdn.jsdelivr.net/gh/aliftype/amiri@master/Amiri-Regular.ttf' },
-                { id: 'Fontsource', url: 'https://cdn.jsdelivr.net/npm/@fontsource/amiri@4.5.0/files/amiri-all-400-normal.woff' }
+                { id: 'Local', url: 'alfont_com_Cairo-Regular.ttf' },
+                { id: 'GStatic_Cairo', url: 'https://cdn.jsdelivr.net/gh/googlefonts/cairo@master/fonts/ttf/Cairo-Regular.ttf' },
+                { id: 'GStatic_Amiri', url: 'https://fonts.gstatic.com/s/amiri/v27/J7aRnpd8CGxBHqUpvrIw74NL.ttf' }
             ];
 
             for (const src of fontSources) {
@@ -1116,46 +1117,27 @@ async function generatePdfFromTemplate(template, studentData) {
         if (!text) return "";
         try {
             let str = String(text).trim();
-            // Check for Arabic characters (including presentation forms)
-            const hasArabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(str);
+            // Check for Arabic characters
+            const hasArabic = /[\u0600-\u06FF]/.test(str);
             if (!hasArabic) return str;
 
             // 1. Reshape
-            // 1. Reshape
             const Reshaper = (typeof ArabicReshaper !== 'undefined' ? ArabicReshaper : window.ArabicReshaper);
-
             if (Reshaper) {
-                // Try to find the reshape function
-                if (typeof Reshaper.convertArabic === 'function') {
-                    str = Reshaper.convertArabic(str);
-                } else if (typeof Reshaper.reshape === 'function') {
-                    str = Reshaper.reshape(str);
-                } else if (Reshaper.ArabicReshaper && typeof Reshaper.ArabicReshaper.convertArabic === 'function') {
-                    str = Reshaper.ArabicReshaper.convertArabic(str);
-                } else {
-                    console.warn('Start Reshaper found but no convert function!');
-                }
-            } else {
-                console.warn('ArabicReshaper library not found! Text will be disconnected.');
+                if (typeof Reshaper.convertArabic === 'function') str = Reshaper.convertArabic(str);
+                else if (typeof Reshaper.reshape === 'function') str = Reshaper.reshape(str);
+                else if (Reshaper.ArabicReshaper && typeof Reshaper.ArabicReshaper.convertArabic === 'function') str = Reshaper.ArabicReshaper.convertArabic(str);
             }
 
-            // 2. Reverse for RTL
+            // 2. Reverse for PDF layout
             let reversed = str.split('').reverse().join('');
 
-            // 3. Fix LTR segments (numbers, english words)
-            // This regex matches sequences of non-Arabic characters that should be LTR
-            // We re-reverse them to restore their order
-            const ltrPattern = /[a-zA-Z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F\s.,:;!?@#$%^&*()_+\-=\[\]{}<>|/\\~`"']+/g;
-
-            reversed = reversed.replace(ltrPattern, function (match) {
-                // Only re-reverse if it contains letters or numbers, to avoid messing up simple punctuation between Arabic words if any
-                if (/[a-zA-Z0-9]/.test(match)) {
-                    return match.split('').reverse().join('');
-                }
-                // For pure punctuation/spaces, context matters, but usually in RTL text, 
-                // if it's surrounded by Arabic, it flows RTL. 
-                // If it's "123", it flows LTR.
-                return match;
+            // 3. Fix segments that SHOULD stay LTR (Numbers, English)
+            // This is critical: without this, 123 becomes 321
+            const ltrMatch = /([a-zA-Z0-9\s.+@#]+)/g;
+            reversed = reversed.replace(ltrMatch, function (m) {
+                // If it's a number or english, re-reverse it back to natural order
+                return m.split('').reverse().join('');
             });
 
             return reversed;
