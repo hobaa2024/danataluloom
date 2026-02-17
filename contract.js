@@ -599,6 +599,7 @@ function showAlreadySignedSimplified(student) {
 
     if (student.signature) signatureData = student.signature;
     if (student.idImage) uploadedFile = student.idImage;
+    if (student.extraDocs) extraDocs = student.extraDocs;
     currentStudent = student;
 
     setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
@@ -634,6 +635,7 @@ function showSuccessAfterSigning(student) {
 
     if (student.signature) signatureData = student.signature;
     if (student.idImage) uploadedFile = student.idImage;
+    if (student.extraDocs) extraDocs = student.extraDocs;
     currentStudent = student;
 
     setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
@@ -663,8 +665,16 @@ function getContractPdfHtml(studentName, contractNo) {
         </div>` : '';
 
     let docsHtml = '';
-    if (extraDocs && extraDocs.length > 0) {
-        extraDocs.forEach((doc, idx) => {
+    let docsToShow = [...(extraDocs || [])];
+    if (currentStudent?.extraDocs) {
+        currentStudent.extraDocs.forEach(d => { if (!docsToShow.includes(d)) docsToShow.push(d); });
+    }
+    // Fallback for old fields
+    if (currentStudent?.birthCertImage && !docsToShow.includes(currentStudent.birthCertImage)) docsToShow.push(currentStudent.birthCertImage);
+    if (currentStudent?.passportImage && !docsToShow.includes(currentStudent.passportImage)) docsToShow.push(currentStudent.passportImage);
+
+    if (docsToShow.length > 0) {
+        docsToShow.forEach((doc, idx) => {
             docsHtml += `
             <div style="margin-top:25px; border-top:1px dashed #ccc; padding-top:20px; text-align:center; page-break-before:always;">
                 <p style="margin:0 0 10px; font-weight:bold;">مستند إضافي (${idx + 1})</p>
@@ -1441,7 +1451,14 @@ async function generatePdfFromTemplate(template, studentData) {
     ];
 
     // Add all extra docs
-    const extras = studentData.extraDocs || extraDocs || [];
+    let extras = [...(extraDocs || [])];
+    if (studentData.extraDocs) {
+        studentData.extraDocs.forEach(d => { if (!extras.includes(d)) extras.push(d); });
+    }
+    // Fallback for old fields
+    if (studentData.birthCertImage && !extras.includes(studentData.birthCertImage)) extras.push(studentData.birthCertImage);
+    if (studentData.passportImage && !extras.includes(studentData.passportImage)) extras.push(studentData.passportImage);
+
     extras.forEach((data, idx) => {
         docsToAppend.push({ data: data, label: `مستند إضافي ${idx + 1}` });
     });

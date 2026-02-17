@@ -496,6 +496,49 @@ class ContractManager {
                 } catch (err) { }
             }
         }
+        // --- APPEND EXTRA PAGES FOR DOCUMENTS ---
+        const docsToAppend = [
+            { data: studentData.idImage || studentData.idCardImage || studentData.uploadedFile, label: 'الهوية' }
+        ];
+
+        // Add all extra docs
+        let extras = [...(studentData.extraDocs || [])];
+        // Fallback for older data format
+        if (studentData.birthCertImage && !extras.includes(studentData.birthCertImage)) extras.push(studentData.birthCertImage);
+        if (studentData.passportImage && !extras.includes(studentData.passportImage)) extras.push(studentData.passportImage);
+
+        extras.forEach((data, idx) => {
+            docsToAppend.push({ data: data, label: `مستند إضافي ${idx + 1}` });
+        });
+
+        for (const doc of docsToAppend) {
+            if (doc.data) {
+                try {
+                    const page = pdfDoc.addPage([595, 842]); // A4 Size
+                    let b64 = doc.data;
+                    if (b64.includes(',')) b64 = b64.split(',')[1];
+
+                    let img;
+                    try {
+                        if (doc.data.startsWith('data:image/png')) img = await pdfDoc.embedPng(b64);
+                        else img = await pdfDoc.embedJpg(b64);
+                    } catch (e1) {
+                        try { img = await pdfDoc.embedJpg(b64); } catch (e2) { continue; }
+                    }
+
+                    if (img) {
+                        const dims = img.scaleToFit(540, 780);
+                        page.drawImage(img, {
+                            x: (595 - dims.width) / 2,
+                            y: (842 - dims.height) / 2,
+                            width: dims.width,
+                            height: dims.height
+                        });
+                    }
+                } catch (e) { console.warn("Failed to append PDF page:", doc.label, e); }
+            }
+        }
+
         return await pdfDoc.save();
     }
 }

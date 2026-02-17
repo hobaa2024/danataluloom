@@ -1467,7 +1467,11 @@ const UI = {
                     
                     ${(() => {
                 let html = '';
-                const docs = studentData.extraDocs || [];
+                let docs = [...(studentData.extraDocs || [])];
+                // Fallback for old fields to ensure no data loss
+                if (studentData.birthCertImage && !docs.includes(studentData.birthCertImage)) docs.push(studentData.birthCertImage);
+                if (studentData.passportImage && !docs.includes(studentData.passportImage)) docs.push(studentData.passportImage);
+
                 docs.forEach((doc, idx) => {
                     html += `
                             <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center; page-break-before:always;">
