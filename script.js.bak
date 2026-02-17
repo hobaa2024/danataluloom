@@ -1,0 +1,2143 @@
+// Database Management using LocalStorage
+class DatabaseManager {
+    constructor() {
+        this.init();
+    }
+
+    init() {
+        if (!localStorage.getItem('students')) {
+            localStorage.setItem('students', JSON.stringify([]));
+        }
+        if (!localStorage.getItem('contracts')) {
+            localStorage.setItem('contracts', JSON.stringify([]));
+        }
+        if (!localStorage.getItem('appSettings')) {
+            localStorage.setItem('appSettings', JSON.stringify({
+                schoolStampText: 'مدارس دانة العلوم - الإدارة',
+                levels: ['الطفولة المبكرة', 'رياض أطفال', 'الابتدائية', 'المتوسطة', 'الثانوية'],
+                grades: ['مستوى أول', 'مستوى ثاني', 'مستوى ثالث', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
+                adminUsername: 'admin',
+                adminPassword: 'admin',
+                schoolLogo: '' // Base64 string
+            }));
+        }
+
+        // Initialize Cloud Sync if available
+        if (typeof CloudDB !== 'undefined' && isFirebaseConfigured) {
+            console.log('☁️ Connecting to Firebase...');
+
+            // Listen for updates
+            CloudDB.listenForUpdates(remoteStudents => {
+                this.mergeRemoteData(remoteStudents);
+            });
+
+            // One-time check: If local has data and cloud is unknown, try to sync up
+            // Checks if we haven't synced before in this session
+            if (!sessionStorage.getItem('initialSyncDone')) {
+                const localData = this.getStudents();
+                if (localData.length > 0) {
+                    CloudDB.getStudents().then(cloudData => {
+                        if (cloudData.length === 0) {
+                            console.log('☁️ Cloud empty, uploading local data...');
+                            CloudDB.syncLocalToCloud();
+                        }
+                    });
+                }
+                sessionStorage.setItem('initialSyncDone', 'true');
+            }
+        }
+    }
+
+    // Merge remote data into local storage (Conflict resolution: Latest wins or simple merge)
+    mergeRemoteData(remoteStudents) {
+        if (!remoteStudents || !Array.isArray(remoteStudents)) return;
+
+        const localStudents = this.getStudents();
+        let hasChanges = false;
+
+        remoteStudents.forEach(remote => {
+            const localIdx = localStudents.findIndex(l => String(l.id) === String(remote.id));
+            if (localIdx === -1) {
+                // New student from cloud
+                localStudents.push(remote);
+                hasChanges = true;
+            } else {
+                // Update existing if different (Simple check or timestamp check if available)
+                // For now, allow cloud to overwrite local as it's the source of truth for signed contracts
+                const local = localStudents[localIdx];
+                if (JSON.stringify(local) !== JSON.stringify(remote)) {
+                    localStudents[localIdx] = remote;
+                    hasChanges = true;
+                }
+            }
+        });
+
+        if (hasChanges) {
+            localStorage.setItem('students', JSON.stringify(localStudents));
+            console.log('🔄 Local data updated from Cloud');
+
+            // Trigger UI refresh if UI exists
+            if (typeof UI !== 'undefined' && UI.refreshData) {
+                UI.refreshData();
+            }
+        }
+    }
+
+    getSettings() {
+        const defaults = {
+            schoolStampText: 'مدارس دانة العلوم - الإدارة',
+            levels: ['الطفولة المبكرة', 'رياض أطفال', 'الابتدائية', 'المتوسطة', 'الثانوية'],
+            grades: ['مستوى أول', 'مستوى ثاني', 'مستوى ثالث', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
+            adminUsername: 'admin',
+            adminPassword: 'admin',
+            schoolLogo: '',
+            customFields: []
+        };
+        try {
+            const savedRaw = localStorage.getItem('appSettings');
+            if (!savedRaw) return defaults;
+            const saved = JSON.parse(savedRaw);
+            if (typeof saved !== 'object' || saved === null) return defaults;
+            return { ...defaults, ...saved };
+        } catch (e) {
+            console.error('Error loading settings:', e);
+            return defaults;
+        }
+    }
+
+    saveSettings(settings) {
+        localStorage.setItem('appSettings', JSON.stringify(settings));
+    }
+
+    getStudents() {
+        return JSON.parse(localStorage.getItem('students') || '[]');
+    }
+
+    saveStudent(student) {
+        const students = this.getStudents();
+        const existingIndex = students.findIndex(s => s.id === student.id);
+
+        if (student.id && existingIndex !== -1) {
+            // Update existing
+            students[existingIndex] = { ...students[existingIndex], ...student };
+        } else {
+            // Create new
+            if (!student.id) student.id = Date.now().toString();
+            if (!student.contractStatus) student.contractStatus = 'pending';
+            if (!student.createdAt) student.createdAt = new Date().toISOString();
+            students.push(student);
+        }
+
+        localStorage.setItem('students', JSON.stringify(students));
+
+        // Sync to Cloud
+        if (typeof CloudDB !== 'undefined') {
+            CloudDB.saveStudent(student);
+        }
+
+        return student;
+    }
+
+    saveBulkStudents(studentsArray) {
+        const students = this.getStudents();
+        const newStudents = studentsArray.map(s => ({
+            ...s,
+            id: Date.now().toString() + Math.random(),
+            contractStatus: 'pending',
+            createdAt: new Date().toISOString()
+        }));
+        students.push(...newStudents);
+        localStorage.setItem('students', JSON.stringify(students));
+
+        // Sync to Cloud
+        if (typeof CloudDB !== 'undefined') {
+            newStudents.forEach(s => CloudDB.saveStudent(s));
+        }
+
+        return newStudents;
+    }
+
+    updateStudentStatus(id, status) {
+        const students = this.getStudents();
+        const student = students.find(s => s.id === id);
+        if (student) {
+            student.contractStatus = status;
+            localStorage.setItem('students', JSON.stringify(students));
+
+            // Sync to Cloud
+            if (typeof CloudDB !== 'undefined') {
+                CloudDB.saveStudent(student);
+            }
+        }
+    }
+
+    deleteStudent(id) {
+        const students = this.getStudents();
+        const filtered = students.filter(s => s.id !== id);
+        localStorage.setItem('students', JSON.stringify(filtered));
+
+        // Sync delete to Cloud
+        if (typeof CloudDB !== 'undefined') {
+            CloudDB.deleteStudent(id);
+        }
+    }
+
+    getStats() {
+        const students = this.getStudents();
+        return {
+            total: students.length,
+            signed: students.filter(s => s.contractStatus === 'signed' || s.contractStatus === 'verified').length,
+            pending: students.filter(s => s.contractStatus === 'pending').length,
+            sent: students.filter(s => s.contractStatus === 'sent').length
+        };
+    }
+
+    // New helper for real-time remote updates
+    updateFromRemote() {
+        UI.updateStats();
+        UI.renderStudents();
+        if (typeof ContractUI !== 'undefined' && ContractUI.renderSignedContracts) {
+            ContractUI.renderSignedContracts();
+        }
+    }
+}
+
+const db = new DatabaseManager();
+
+// UI Management
+const UI = {
+    modal: document.getElementById('newStudentModal'),
+    studentForm: document.getElementById('studentForm'),
+    tableBody: document.getElementById('studentsTableBody'),
+
+    // Bulk Selection Logic - Temporarily Disabled
+    handleSelectionChange() {
+        console.log('Selection handler disabled');
+    },
+
+    deleteSelectedStudents() {
+        console.log('Delete function disabled');
+    },
+
+    openModal() {
+        this.modal.classList.add('active');
+
+        // Populate Contract Templates
+        const templateSelect = document.getElementById('contractTemplate');
+        if (templateSelect) {
+            let templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+
+            // Generate default if empty
+            if (templates.length === 0) {
+                // We rely on contract.js/initialization usually, but let's be safe
+                templates = [{ id: 'default', title: 'عقد تسجيل موحد', isDefault: true }];
+            }
+
+            templateSelect.innerHTML = '<option value="">اختر نموذج العقد</option>' +
+                templates.map(t => `<option value="${t.id}" ${t.isDefault ? 'selected' : ''}>${t.title}</option>`).join('');
+        }
+    },
+
+    closeModal() {
+        this.modal.classList.remove('active');
+        this.studentForm.reset();
+        // Reset editing state
+        delete this.studentForm.dataset.editingId;
+        const title = document.querySelector('#newStudentModal h3');
+        const btn = document.querySelector('#newStudentModal button[type="submit"]');
+        if (title) title.textContent = 'تسجيل طالب جديد';
+        if (btn) btn.textContent = 'حفظ وإرسال العقد';
+    },
+
+    updateStats() {
+        const stats = db.getStats();
+        const totalEl = document.getElementById('totalStudents');
+        if (totalEl) totalEl.textContent = stats.total;
+
+        const signedEl = document.getElementById('signedContracts');
+        if (signedEl) signedEl.textContent = stats.signed;
+
+        const pendingEl = document.getElementById('pendingContracts');
+        if (pendingEl) pendingEl.textContent = stats.pending;
+
+        const sentEl = document.getElementById('sentContracts');
+        if (sentEl) sentEl.textContent = stats.sent;
+    },
+
+    renderStudents(filteredStudents = null) {
+        const students = filteredStudents || db.getStudents();
+        const reversedStudents = [...students].reverse();
+
+        if (!this.tableBody) return;
+
+        const renderRow = (student) => `
+            <tr>
+                <td><input type="checkbox" class="student-checkbox" value="${student.id}"></td>
+                <td><strong>${student.studentName}</strong></td>
+                <td>${student.studentLevel || ''} - ${student.studentGrade}</td>
+                <td>${student.parentName}</td>
+                <td dir="ltr">${student.parentWhatsapp}</td>
+                <td>${this.getStatusBadge(student.contractStatus)}</td>
+                <td>
+                    <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                        <button class="btn-icon" onclick="UI.copyContractLink('${student.id}')" title="نسخ رابط العقد" style="color: #667eea;">
+                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                        </button>
+                        ${student.contractStatus === 'signed' ? `
+                        <button class="btn-icon" onclick="markAsSigned('${student.id}')" title="تأكيد استلام العقد (ولي الأمر وقّع)" style="color: #38b2ac;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                        </button>
+                        ` : ''}
+                        <button class="btn-icon" onclick="${student.contractStatus === 'signed' || student.contractStatus === 'verified' ? `UI.downloadContractPdf('${student.id}')` : `UI.printContract('${student.id}')`}" title="طباعة/تحميل">
+                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                        </button>
+                        <button class="btn-icon" onclick="UI.editStudent('${student.id}')" title="تعديل">
+                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        </button>
+                        <button class="btn-icon" onclick="UI.sendContract('${student.id}')" title="إرسال">
+                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                        </button>
+                        ${student.contractStatus === 'signed' || student.contractStatus === 'verified' ? `
+                        <button class="btn-icon" onclick="UI.deleteSignedContent('${student.id}')" title="حذف التوقيع والهوية (لإعادة التعميد)" style="color: #e53e3e;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        </button>
+                        ` : ''}
+                        <button class="btn-icon" onclick="UI.deleteStudent('${student.id}')" title="حذف الطالب">
+                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+
+        // Dashboard Table
+        const dashboardTable = document.getElementById('studentsTableBody');
+        if (dashboardTable) {
+            dashboardTable.innerHTML = reversedStudents.slice(0, 5).map(renderRow).join('');
+            if (reversedStudents.length === 0) dashboardTable.innerHTML = '<tr><td colspan="7" class="text-center p-4">لا يوجد طلاب</td></tr>';
+        }
+
+        // All Students Page Table
+        const allTable = document.getElementById('allStudentsTableBody');
+        if (allTable) {
+            allTable.innerHTML = reversedStudents.map(renderRow).join('');
+            if (reversedStudents.length === 0) allTable.innerHTML = '<tr><td colspan="7" class="text-center p-4">لا يوجد طلاب مسجلين</td></tr>';
+        }
+
+        // Initialize Select All checkboxes
+        const initSelectAll = (headerCheckId, bodyContainerId) => {
+            const headerCheck = document.getElementById(headerCheckId);
+            const container = document.getElementById(bodyContainerId);
+            if (headerCheck && container) {
+                // Reset header check when re-rendering
+                headerCheck.checked = false;
+
+                // Clone to remove old listeners
+                const newHeaderCheck = headerCheck.cloneNode(true);
+                headerCheck.parentNode.replaceChild(newHeaderCheck, headerCheck);
+
+                newHeaderCheck.addEventListener('change', () => {
+                    const checks = container.querySelectorAll('.student-checkbox');
+                    checks.forEach(c => c.checked = newHeaderCheck.checked);
+                    UI.handleSelectionChange();
+                });
+            }
+        };
+
+        // Attach listeners to individual checkboxes
+        const checkboxes = document.querySelectorAll('.student-checkbox');
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', () => UI.handleSelectionChange());
+        });
+
+        initSelectAll('selectAllDashboard', 'studentsTableBody');
+        initSelectAll('selectAllAllStudents', 'allStudentsTableBody');
+
+        // Reset bulk selection UI
+        UI.handleSelectionChange();
+    },
+
+    getStatusBadge(status) {
+        const badges = {
+            pending: '<span class="status-badge status-pending">قيد الانتظار</span>',
+            sent: '<span class="status-badge status-sent">تم الإرسال</span>',
+            signed: '<span class="status-badge status-signed">موقّع (بانتظار التأكيد)</span>',
+            verified: '<span class="status-badge status-verified" style="background: #059669; color: white;">تم التوثيق</span>'
+        };
+        return badges[status] || badges.pending;
+    },
+
+    sendContract(id) {
+        const students = db.getStudents();
+        const student = students.find(s => s.id === id);
+
+        if (student) {
+            // Intelligent base path detection
+            let basePath = window.location.href;
+            if (basePath.indexOf('?') > -1) basePath = basePath.split('?')[0];
+            if (basePath.endsWith('index.html')) basePath = basePath.replace('index.html', '');
+            if (basePath.endsWith('/')) basePath = basePath.slice(0, -1);
+
+            // Fetch Template Data to include in URL
+            let templateTitle = '';
+            let templateContent = '';
+            const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+            const template = templates.find(t => t.id === student.contractTemplateId) || templates.find(t => t.isDefault) || templates[0];
+            if (template) {
+                templateTitle = template.title;
+                templateContent = template.content;
+            }
+
+            // Create highly optimized data payload
+            const secureData = {
+                i: student.id,
+                s: student.studentName,
+                l: student.studentLevel,
+                g: student.studentGrade,
+                p: student.parentName,
+                e: student.parentEmail,
+                w: student.parentWhatsapp,
+                y: student.contractYear,
+                t: templateTitle,
+                c: templateContent,
+                st: 2 // Start at step 2 (Upload ID)
+            };
+
+            // Use LZString for maximum compression (High efficiency)
+            const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(secureData));
+            const contractUrl = `${basePath}/contract.html?c=${compressed}`;
+
+            const message = `*عقد تسجيل إلكتروني - مدارس دانة العلوم* 🏫
+            
+مرحباً ${student.parentName},
+يرجى الاطلاع على عقد التسجيل الخاص بالطالب/ة: *${student.studentName}*
+
+للتعميد والتوقيع، يرجى الضغط على الرابط التالي:
+👇 اضغط هنا للتوقيع 👇
+${contractUrl}
+
+مع تحيات،
+*مدارس دانة العلوم*`.trim();
+
+            let actionsTaken = [];
+
+            // 1. WhatsApp Action
+            if (student.sendMethod === 'whatsapp' || student.sendMethod === 'both') {
+                let phone = student.parentWhatsapp.replace(/[^\d]/g, '');
+
+                // Add Saudi code if missing or 05 format
+                if (phone.startsWith('05')) {
+                    phone = '966' + phone.substring(1);
+                } else if (phone.startsWith('5')) {
+                    phone = '966' + phone;
+                }
+
+                const whatsappUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+                window.open(whatsappUrl, '_blank');
+                actionsTaken.push('واتساب');
+            }
+
+            // 2. Email Action
+            if (student.sendMethod === 'email' || student.sendMethod === 'both') {
+                const subject = encodeURIComponent(`عقد تسجيل الطالب ${student.studentName}`);
+                const body = encodeURIComponent(message);
+                const mailtoLink = `mailto:${student.parentEmail}?subject=${subject}&body=${body}`;
+
+                window.open(mailtoLink, '_self');
+
+                // Feedback for email
+                setTimeout(() => {
+                    UI.showNotification('تم فتح برنامج البريد الإلكتروني');
+                }, 800);
+                actionsTaken.push('بريد إلكتروني');
+            }
+
+            // Update status
+            db.updateStudentStatus(id, 'sent');
+            this.updateStats();
+            this.renderStudents();
+            this.showNotification(`تم البدء بالإرسال عبر ${actionsTaken.join(' و ')}`);
+
+            // Allow manual copy
+            setTimeout(() => {
+                const wantsCopy = confirm('هل تريد نسخ رابط العقد المباشر للاحتياط؟');
+                if (wantsCopy) {
+                    navigator.clipboard.writeText(contractUrl).then(() => {
+                        UI.showNotification('✅ تم نسخ الرابط!');
+                    });
+                }
+            }, 1000);
+        }
+    },
+
+    copyContractLink(id) {
+        const students = db.getStudents();
+        const student = students.find(s => String(s.id) === String(id));
+
+        if (!student) {
+            this.showNotification('❌ لم يتم العثور على الطالب');
+            return;
+        }
+
+        // Build base path
+        let basePath = window.location.href;
+        if (basePath.indexOf('?') > -1) basePath = basePath.split('?')[0];
+        if (basePath.endsWith('index.html')) basePath = basePath.replace('index.html', '');
+        if (basePath.endsWith('/')) basePath = basePath.slice(0, -1);
+
+        // Get template data
+        let templateTitle = '';
+        let templateContent = '';
+        const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+        const template = templates.find(t => t.id === student.contractTemplateId) || templates.find(t => t.isDefault) || templates[0];
+        if (template) {
+            templateTitle = template.title;
+            templateContent = template.content;
+        }
+
+        // Create compressed data
+        const secureData = {
+            i: student.id,
+            s: student.studentName,
+            l: student.studentLevel,
+            g: student.studentGrade,
+            p: student.parentName,
+            e: student.parentEmail,
+            w: student.parentWhatsapp,
+            y: student.contractYear,
+            t: templateTitle,
+            c: templateContent,
+            st: 2
+        };
+
+        const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(secureData));
+        const contractUrl = `${basePath}/contract.html?c=${compressed}`;
+
+        // Copy to clipboard
+        navigator.clipboard.writeText(contractUrl).then(() => {
+            this.showNotification('✅ تم نسخ رابط العقد بنجاح!');
+        }).catch(err => {
+            console.error('Copy failed:', err);
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = contractUrl;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            this.showNotification('✅ تم نسخ رابط العقد!');
+        });
+    },
+
+    getContractSummaryHTML(student) {
+        const settings = db.getSettings();
+        const stampText = settings.schoolStampText || 'مدارس دانة العلوم';
+        const hasSignature = !!student.signature;
+        const hasIdImage = !!student.idImage;
+
+        // Get contract template
+        const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+        const template = templates.find(t => t.id === student.contractTemplateId) || templates.find(t => t.isDefault) || templates[0];
+
+        let contractContent = '';
+        let contractTitle = 'عقد تسجيل';
+
+        if (template) {
+            contractTitle = template.title || contractTitle;
+            contractContent = template.content || '';
+
+            // Replace dynamic variables
+            contractContent = contractContent
+                .replace(/{اسم_الطالب}/g, student.studentName || '')
+                .replace(/{اسم_ولي_الامر}/g, student.parentName || '')
+                .replace(/{الصف}/g, `الصف ${student.studentGrade}` || '')
+                .replace(/{المرحلة_الدراسية}/g, student.studentLevel || '')
+                .replace(/{السنة_الدراسية}/g, student.contractYear || '')
+                .replace(/{البريد_الالكتروني}/g, student.parentEmail || '')
+                .replace(/{رقم_الواتساب}/g, student.parentWhatsapp || '')
+                .replace(/{التاريخ}/g, new Date().toLocaleDateString('ar-SA'))
+                .replace(/\n/g, '<br>');
+        }
+
+        const stampHtml = student.contractStatus === 'verified' ?
+            `<div style="width: 120px; height: 120px; border: 4px double #004d99; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; transform: rotate(-15deg); color: #004d99; font-weight: bold; text-align: center; padding: 10px;">
+                <div style="font-size: 10px;">مدارس دانة العلوم<br><span style="font-size: 12px; display:block; margin: 2px 0;">مـعـتـمـد</span><br>${stampText}</div>
+            </div>` :
+            `<div style="width: 120px; height: 120px; border: 2px dashed #cbd5e0; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; color: #a0aec0; font-size: 12px;"> بانتظار التوثيق </div>`;
+
+        return `
+            <div style="font-family: 'Cairo', Arial, sans-serif; direction: rtl; padding: 30px; border: 1px solid #eee; background: white;">
+                <!-- Header -->
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #667eea; margin-bottom: 30px; padding-bottom: 15px;">
+                    <div>
+                        <h1 style="color: #2d3748; margin: 0; font-size: 24px;">${contractTitle}</h1>
+                        <p style="color: #718096; margin: 5px 0 0; font-size: 14px;">نظام دانة العلوم - ${new Date().toLocaleDateString('ar-SA')}</p>
+                    </div>
+                    ${settings.schoolLogo ? `<img src="${settings.schoolLogo}" style="height: 60px; width: auto;">` : `<img src="assets/logo.png" style="height: 60px; width: auto;">`}
+                </div>
+
+                <!-- Student Info -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+                    <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0;">
+                        <h3 style="margin-top: 0; color: #4a5568; font-size: 14px; border-bottom: 1px solid #cbd5e0; padding-bottom: 8px;">بيانات الطالب</h3>
+                        <p style="margin: 8px 0; font-size: 13px;"><strong>الاسم:</strong> ${student.studentName}</p>
+                        <p style="margin: 8px 0; font-size: 13px;"><strong>المرحلة:</strong> ${student.studentLevel}</p>
+                        <p style="margin: 8px 0; font-size: 13px;"><strong>الصف:</strong> ${student.studentGrade}</p>
+                        <p style="margin: 8px 0; font-size: 13px;"><strong>رقم العقد:</strong> ${student.contractNo || 'N/A'}</p>
+                    </div>
+                    <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0;">
+                        <h3 style="margin-top: 0; color: #4a5568; font-size: 14px; border-bottom: 1px solid #cbd5e0; padding-bottom: 8px;">بيانات ولي الأمر</h3>
+                        <p style="margin: 8px 0; font-size: 13px;"><strong>الاسم:</strong> ${student.parentName}</p>
+                        <p style="margin: 8px 0; font-size: 13px;"><strong>الواتساب:</strong> ${student.parentWhatsapp}</p>
+                        <p style="margin: 8px 0; font-size: 13px;"><strong>البريد:</strong> ${student.parentEmail || '-'}</p>
+                        <p style="margin: 8px 0; font-size: 13px;"><strong>الحالة:</strong> ${student.contractStatus === 'verified' ? 'تم التوثيق ✓' : 'موقع'}</p>
+                    </div>
+                </div>
+
+                <!-- Contract Text -->
+                <div style="background: #fffbeb; padding: 20px; border-radius: 12px; border: 1px solid #fcd34d; margin-bottom: 30px;">
+                    <h3 style="margin-top: 0; color: #92400e; font-size: 16px; margin-bottom: 15px;">📜 نص العقد</h3>
+                    <div style="color: #1f2937; font-size: 14px; line-height: 1.8;">
+                        ${contractContent || '<p style="color:#a0aec0;">لا يوجد نص عقد محدد</p>'}
+                    </div>
+                </div>
+
+                <!-- ID Image -->
+                <div style="margin-bottom: 30px;">
+                    <h3 style="color: #4a5568; font-size: 16px; margin-bottom: 10px;">📷 صورة الهوية المرفقة:</h3>
+                    ${hasIdImage ? `<img src="${student.idImage}" style="max-width: 100%; border-radius: 8px; border: 1px solid #ddd; max-height: 300px;">` : '<p style="color: #a0aec0; border: 1px dashed #ccc; padding: 20px; text-align: center; border-radius: 8px;">لم يتم إرفاق صورة الهوية</p>'}
+                </div>
+
+                <!-- Signature and Stamp -->
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; padding-top: 30px; border-top: 2px solid #eee;">
+                    <div style="text-align: center; width: 45%;">
+                        <h4 style="margin-bottom: 10px; color: #4a5568;">✍️ توقيع ولي الأمر</h4>
+                        ${hasSignature ? `<img src="${student.signature}" style="max-width: 200px; max-height: 100px; border: 1px solid #eee; padding: 5px; border-radius: 8px; background: #fafafa;">` : '<div style="height: 80px; border: 1px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #a0aec0;">لا يوجد توقيع</div>'}
+                        <p style="font-size: 12px; color: #718096; margin-top: 10px;">تم التوقيع إلكترونياً بتاريخ: ${student.signedAt ? new Date(student.signedAt).toLocaleDateString('ar-SA') : '-'}</p>
+                    </div>
+                    
+                    <div style="text-align: center; width: 45%;">
+                        <h4 style="margin-bottom: 10px; color: #4a5568;">🏫 اعتماد إدارة المدرسة</h4>
+                        ${stampHtml}
+                    </div>
+                </div>
+                
+                <div style="margin-top: 50px; text-align: center; color: #a0aec0; font-size: 10px;">هذا العقد تم توليده إلكترونياً من منصة مدارس دانة العلوم.</div>
+                
+                ${(student.contractStatus === 'signed' || student.contractStatus === 'verified') ? `
+                <div style="margin-top: 30px; display: flex; flex-direction: column; align-items: center; border: 1px solid #edf2f7; padding: 15px; border-radius: 8px; width: 220px; float: left;">
+                    <div id="pdf-qrcode" style="margin-bottom: 8px;"></div>
+                    <div style="font-size: 10px; color: #718096; text-align: center;">امسح للتحقق من العقد<br>رقم العقد: ${student.contractNo || student.id}</div>
+                </div>
+                <div style="clear: both;"></div>
+                ` : ''}
+            </div>
+        `;
+    },
+
+    downloadContractPdf(id) {
+        console.log('PDF Download requested', id);
+        alert('وظيفة PDF تحت الصيانة');
+    },
+
+    previewContract(id) {
+        const students = db.getStudents();
+        const student = students.find(s => String(s.id) === String(id));
+
+        if (!student) {
+            console.error('Student not found for preview:', id);
+            return;
+        }
+
+        console.log('Preview student data:', {
+            id: student.id,
+            hasSignature: !!student.signature,
+            hasIdImage: !!student.idImage,
+            status: student.contractStatus
+        });
+
+        const summaryHtml = this.getContractSummaryHTML(student);
+        const modal = document.getElementById('contractPreviewModal');
+        const body = document.getElementById('contractPreviewBody');
+
+        if (modal && body) {
+            body.innerHTML = summaryHtml;
+            modal.classList.add('active');
+
+            // Generate QR code for signed or verified contracts
+            if (student.contractStatus === 'signed' || student.contractStatus === 'verified') {
+                const qrDiv = body.querySelector('#pdf-qrcode');
+                if (qrDiv) {
+                    // Use local verification URL
+                    let basePath = window.location.href;
+                    if (basePath.indexOf('?') > -1) basePath = basePath.split('?')[0];
+                    if (basePath.endsWith('index.html')) basePath = basePath.replace('index.html', '');
+                    if (basePath.endsWith('/')) basePath = basePath.slice(0, -1);
+
+                    const verifyUrl = `${basePath}/contract.html?id=${student.id}`;
+
+                    new QRCode(qrDiv, {
+                        text: verifyUrl,
+                        width: 80,
+                        height: 80,
+                        colorDark: "#004d99",
+                        colorLight: "#ffffff"
+                    });
+                }
+            }
+        }
+    },
+
+    closePreviewModal() {
+        const modal = document.getElementById('contractPreviewModal');
+        if (modal) modal.classList.remove('active');
+    },
+
+    editStudent(id) {
+        const students = db.getStudents();
+        const student = students.find(s => s.id === id);
+
+        if (student) {
+            // Fill form
+            const setVal = (id, val) => {
+                const el = document.getElementById(id);
+                if (el) el.value = val || '';
+            };
+
+            setVal('studentName', student.studentName);
+            setVal('studentLevel', student.studentLevel);
+            setVal('studentGrade', student.studentGrade);
+            setVal('parentName', student.parentName);
+            setVal('parentEmail', student.parentEmail);
+            setVal('parentWhatsapp', student.parentWhatsapp);
+            setVal('sendMethod', student.sendMethod);
+            setVal('contractYear', student.contractYear);
+
+            const template = document.getElementById('contractTemplate');
+            if (template && student.contractTemplateId) {
+                template.value = student.contractTemplateId;
+            }
+
+            // Fill custom fields
+            if (student.customData) {
+                Object.keys(student.customData).forEach(label => {
+                    const input = document.querySelector(`#dynamicCustomFieldsContainer input[data-custom-label="${label}"]`);
+                    if (input) input.value = student.customData[label];
+                });
+            }
+
+            // Set Editing State
+            if (this.studentForm) {
+                this.studentForm.dataset.editingId = id;
+                const modalTitle = document.querySelector('#newStudentModal h3');
+                const submitBtn = document.querySelector('#newStudentModal button[type="submit"]');
+                if (modalTitle) modalTitle.textContent = 'تعديل بيانات الطالب';
+                if (submitBtn) submitBtn.textContent = 'حفظ التعديلات';
+            }
+
+            this.openModal();
+        }
+    },
+
+    printContract(id) {
+        const students = db.getStudents();
+        const student = students.find(s => s.id === id);
+        if (!student) return;
+
+        let basePath = window.location.href;
+        if (basePath.indexOf('?') > -1) basePath = basePath.split('?')[0];
+        if (basePath.endsWith('index.html')) basePath = basePath.replace('index.html', '');
+        if (basePath.endsWith('/')) basePath = basePath.slice(0, -1);
+
+        // Fetch Template Data
+        let templateTitle = '';
+        let templateContent = '';
+        const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+        const template = templates.find(t => t.id === student.contractTemplateId) || templates.find(t => t.isDefault) || templates[0];
+        if (template) {
+            templateTitle = template.title;
+            templateContent = template.content;
+        }
+
+        const secureData = {
+            i: student.id,
+            s: student.studentName,
+            l: student.studentLevel,
+            g: student.studentGrade,
+            p: student.parentName,
+            e: student.parentEmail,
+            w: student.parentWhatsapp,
+            y: student.contractYear,
+            t: templateTitle,
+            c: templateContent,
+            st: student.contractStatus === 'signed' ? 4 : 1
+        };
+
+        const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(secureData));
+        window.open(`${basePath}/contract.html?c=${compressed}&print=true`, '_blank');
+    },
+
+    deleteStudent(id) {
+        if (confirm('هل أنت متأكد من حذف هذا الطالب؟ لا يمكن التراجع عن هذا الإجراء.')) {
+            db.deleteStudent(id);
+            this.updateStats();
+            this.renderStudents();
+            this.showNotification('تم حذف الطالب بنجاح!');
+        }
+    },
+
+    deleteSignedContent(id) {
+        console.log('deleteSignedContent called with id:', id);
+
+        if (confirm('هل أنت متأكد من حذف التوقيع وصورة الهوية لهذا الطالب؟\n\n- سيتم مسح بيانات التوقيع والهوية.\n- ستتغير حالة الطالب إلى "مرسل".\n- سيتمكن ولي الأمر من التوقيع مرة أخرى على العقد.')) {
+            const students = db.getStudents();
+            const idx = students.findIndex(s => String(s.id) === String(id));
+
+            console.log('Found student at index:', idx);
+
+            if (idx !== -1) {
+                console.log('Before deletion:', {
+                    status: students[idx].contractStatus,
+                    hasSignature: !!students[idx].signature,
+                    hasIdImage: !!students[idx].idImage
+                });
+
+                // Clear all signing-related data
+                students[idx].contractStatus = 'sent';
+                students[idx].signature = null;
+                students[idx].idImage = null;
+                students[idx].signedAt = null;
+                students[idx].verifiedAt = null;
+                students[idx].contractNo = null;
+
+                // Save to localStorage
+                localStorage.setItem('students', JSON.stringify(students));
+
+                console.log('After deletion:', {
+                    status: students[idx].contractStatus,
+                    hasSignature: !!students[idx].signature,
+                    hasIdImage: !!students[idx].idImage
+                });
+
+                // Refresh all UI components
+                this.updateStats();
+                this.renderStudents();
+                if (typeof ContractUI !== 'undefined') {
+                    ContractUI.renderSignedContracts();
+                }
+
+                this.showNotification('✅ تم مسح التوقيع والهوية بنجاح. يمكن لولي الأمر إعادة التوقيع الآن.');
+            } else {
+                console.error('Student not found with id:', id);
+                this.showNotification('❌ لم يتم العثور على الطالب');
+            }
+        }
+    },
+
+    showNotification(message) {
+        const notification = document.getElementById('notification');
+        const notificationText = document.getElementById('notificationText');
+        if (notification && notificationText) {
+            notificationText.textContent = message;
+            notification.classList.add('show');
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        } else {
+            alert(message);
+        }
+    }
+};
+
+// Event Listeners
+document.addEventListener('DOMContentLoaded', () => {
+    // Check localhost
+    if (window.location.protocol === 'file:') {
+        const warning = document.getElementById('localhostWarning');
+        if (warning) warning.style.display = 'block';
+    }
+
+    UI.updateStats();
+    UI.renderStudents();
+    createBulkUploadButton();
+
+    if (document.getElementById('newStudentBtn')) {
+        document.getElementById('newStudentBtn').addEventListener('click', () => {
+            UI.openModal();
+        });
+    }
+
+    if (document.getElementById('closeModalBtn')) {
+        document.getElementById('closeModalBtn').addEventListener('click', () => {
+            UI.closeModal();
+        });
+    }
+
+    if (document.getElementById('cancelBtn')) {
+        document.getElementById('cancelBtn').addEventListener('click', () => {
+            UI.closeModal();
+        });
+    }
+
+    if (UI.modal) {
+        UI.modal.addEventListener('click', (e) => {
+            if (e.target === UI.modal) {
+                UI.closeModal();
+            }
+        });
+    }
+
+    if (document.getElementById('studentForm')) {
+        document.getElementById('studentForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const form = e.target;
+            const editingId = form.dataset.editingId;
+
+            const student = {
+                studentName: document.getElementById('studentName').value,
+                studentLevel: document.getElementById('studentLevel').value,
+                studentGrade: document.getElementById('studentGrade').value,
+                parentName: document.getElementById('parentName').value,
+                parentEmail: document.getElementById('parentEmail').value,
+                parentWhatsapp: document.getElementById('parentWhatsapp').value,
+                sendMethod: document.getElementById('sendMethod').value,
+                contractYear: document.getElementById('contractYear').value,
+                contractTemplateId: document.getElementById('contractTemplate')?.value || null,
+                customData: {}
+            };
+
+            // Capture custom fields
+            const customInputs = document.querySelectorAll('#dynamicCustomFieldsContainer input');
+            customInputs.forEach(input => {
+                student.customData[input.dataset.customLabel] = input.value;
+            });
+
+            if (editingId) {
+                student.id = editingId;
+            }
+
+            db.saveStudent(student);
+            UI.closeModal();
+            UI.updateStats();
+            UI.renderStudents(); // Refresh grid
+            UI.showNotification(editingId ? 'تم تعديل البيانات بنجاح' : 'تم إضافة الطالب بنجاح');
+        });
+    }
+});
+
+// Bulk Upload Feature
+function createBulkUploadButton() {
+    // Target the button group in students-page specifically
+    const container = document.querySelector('#students-page .page-header > div:last-child');
+    if (!container) return;
+
+    // Check if duplicate
+    if (document.getElementById('bulkUploadBtn')) return;
+
+    const bulkBtn = document.createElement('button');
+    bulkBtn.id = 'bulkUploadBtn';
+    bulkBtn.className = 'btn btn-secondary';
+    bulkBtn.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+        رفع ملف Excel/CSV
+    `;
+    bulkBtn.addEventListener('click', openBulkUploadModal);
+
+    // Insert before the "Add Student" button
+    container.insertBefore(bulkBtn, container.firstChild);
+}
+
+function createBulkSendButton() {
+    const container = document.querySelector('#students-page .page-header > div:last-child');
+    if (!container) return;
+
+    if (document.getElementById('massSendBtn')) return;
+
+    const sendBtn = document.createElement('button');
+    sendBtn.id = 'massSendBtn';
+    sendBtn.className = 'btn btn-primary';
+    sendBtn.style.background = 'linear-gradient(135deg, #38b2ac 0%, #319795 100%)';
+    sendBtn.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+        إرسال جماعي
+    `;
+    sendBtn.addEventListener('click', openBulkSendModal);
+
+    container.appendChild(sendBtn);
+}
+
+function openBulkSendModal() {
+    let students = db.getStudents().filter(s => s.contractStatus !== 'signed');
+
+    // Check for selected students via checkboxes
+    const selectedIds = Array.from(document.querySelectorAll('.student-checkbox:checked')).map(cb => cb.value);
+
+    if (selectedIds.length > 0) {
+        students = students.filter(s => selectedIds.includes(s.id));
+    }
+
+    if (students.length === 0) {
+        alert(selectedIds.length > 0 ? 'الطلاب المحددين وقعوا العقود بالفعل.' : 'لا يوجد طلاب بانتظار إرسال العقود حالياً.');
+        return;
+    }
+
+    // Group students by parent (using phone number)
+    const parentGroups = {};
+    students.forEach(s => {
+        const phone = s.parentWhatsapp.replace(/[^\d]/g, '');
+        if (!parentGroups[phone]) {
+            parentGroups[phone] = {
+                parentName: s.parentName,
+                phone: s.parentWhatsapp,
+                students: []
+            };
+        }
+        parentGroups[phone].students.push(s);
+    });
+
+    const parentList = Object.values(parentGroups);
+
+    // Remove old modal if exists
+    const oldModal = document.getElementById('bulkSendModal');
+    if (oldModal) oldModal.remove();
+
+    const modalHTML = `
+        <div class="modal active" id="bulkSendModal">
+            <div class="modal-content" style="max-width: 700px;">
+                <div class="modal-header">
+                    <h3>إرسال العقود الجماعي</h3>
+                    <button class="close-btn" onclick="document.getElementById('bulkSendModal').remove()">&times;</button>
+                </div>
+                <div class="form" style="padding-top: 0;">
+                    <div style="background: #f7fafc; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-right: 4px solid #38b2ac;">
+                        <p>سيتم تجميع عقود الأبناء لنفس ولي الأمر في رسالة واحدة.</p>
+                        <strong>عدد أولياء الأمور: ${parentList.length}</strong> | 
+                        <strong>إجمالي الطلاب: ${students.length}</strong>
+                    </div>
+
+                    <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 1.5rem;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ولي الأمر</th>
+                                    <th>الأبناء</th>
+                                    <th>الإجراء</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${parentList.map((p, index) => `
+                                    <tr>
+                                        <td>
+                                            <strong>${p.parentName}</strong><br>
+                                            <small dir="ltr">${p.phone}</small>
+                                        </td>
+                                        <td>
+                                            ${p.students.map(s => `<span class="status-badge" style="background:#edf2f7; color:#4a5568; margin:2px; display:inline-block">${s.studentName}</span>`).join('')}
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-small btn-primary" id="sendBatchBtn-${index}" onclick="UI.sendBulkBatch('${index}')">إرسال</button>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="form-actions">
+                        <button class="btn btn-secondary" onclick="document.getElementById('bulkSendModal').remove()">إغلاق</button>
+                        <button class="btn btn-primary" onclick="UI.sendAllBatches()" style="background: #2d3748;">إرسال للكل (تتابعي)</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    // Store current batch data in window for easy access
+    window._currentBatchData = parentList;
+}
+
+UI.sendBulkBatch = function (index) {
+    const parentData = window._currentBatchData[index];
+    if (!parentData) return;
+
+    const btn = document.getElementById(`sendBatchBtn-${index}`);
+    if (btn) {
+        btn.textContent = 'تم الإرسال';
+        btn.style.background = '#cbd5e0';
+        btn.disabled = true;
+    }
+
+    let basePath = window.location.href;
+    if (basePath.indexOf('?') > -1) basePath = basePath.split('?')[0];
+    if (basePath.endsWith('index.html')) basePath = basePath.replace('index.html', '');
+    if (basePath.endsWith('/')) basePath = basePath.slice(0, -1);
+
+    const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+
+    let linksText = '';
+    parentData.students.forEach((student, idx) => {
+        const template = templates.find(t => t.id === student.contractTemplateId) || templates.find(t => t.isDefault) || templates[0];
+
+        const secureData = {
+            i: student.id,
+            s: student.studentName,
+            l: student.studentLevel,
+            g: student.studentGrade,
+            p: student.parentName,
+            e: student.parentEmail,
+            w: student.parentWhatsapp,
+            y: student.contractYear,
+            t: template?.title || '',
+            c: template?.content || '',
+            st: 2
+        };
+
+        const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(secureData));
+        const url = `${basePath}/contract.html?c=${compressed}`;
+
+        linksText += `\n${idx + 1}. *${student.studentName}*:\n${url}\n`;
+
+        // Update status for each student
+        db.updateStudentStatus(student.id, 'sent');
+    });
+
+    const message = `*عقود التسجيل المدرسية* 📝
+
+مرحباً ${parentData.parentName},
+يرجى الاطلاع على عقود التسجيل الخاصة بأبنائك وتعميدها إلكترونياً:
+${linksText}
+شكراً لكم لتعاونكم.`.trim();
+
+    let phone = parentData.phone.replace(/[^\d]/g, '');
+    if (phone.startsWith('05')) phone = '966' + phone.substring(1);
+    else if (phone.startsWith('5')) phone = '966' + phone;
+
+    const whatsappUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
+
+    this.updateStats();
+    this.renderStudents();
+};
+
+UI.sendAllBatches = function () {
+    const list = window._currentBatchData;
+    if (!list) return;
+
+    if (!confirm(`هل أنت متأكد من بدء الإرسال لعدد ${list.length} ولي أمر؟ سيتم فتح نافذة واتساب لكل واحد منهم تتابعياً.`)) return;
+
+    let i = 0;
+    const sendNext = () => {
+        if (i < list.length) {
+            const btn = document.getElementById(`sendBatchBtn-${i}`);
+            if (btn && !btn.disabled) {
+                UI.sendBulkBatch(i);
+            }
+            i++;
+            if (i < list.length) {
+                // Wait small delay to avoid browser blocking multiple windows too aggressively
+                setTimeout(sendNext, 1500);
+            }
+        }
+    };
+    sendNext();
+};
+
+function openBulkUploadModal() {
+    // Remove if exists
+    closeBulkUploadModal();
+
+    const modalHTML = `
+        <div class="modal active" id="bulkUploadModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>رفع ملف طلاب جماعي</h3>
+                    <button class="close-btn" onclick="closeBulkUploadModal()">&times;</button>
+                </div>
+                <div class="form" style="padding-top: 0;">
+                    <div class="upload-instructions">
+                        <h4>تعليمات رفع الملف:</h4>
+                        <ul>
+                            <li>قم بتحميل ملف Excel (.xlsx) أو CSV (.csv)</li>
+                            <li>يجب أن يحتوي الملف على الأعمدة التالية بالترتيب: اسم الطالب، المرحلة الدراسية، الصف، اسم ولي الأمر، البريد الإلكتروني، رقم الواتساب، طريقة الإرسال، السنة الدراسية</li>
+                        </ul>
+                        <button class="btn btn-secondary" onclick="downloadTemplate()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            تحميل نموذج Excel
+                        </button>
+                    </div>
+                    
+                    <div class="upload-area" id="bulkUploadArea">
+                        <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <h3>اسحب الملف هنا أو انقر للتحميل</h3>
+                        <p>Excel (.xlsx) أو CSV (.csv)</p>
+                        <input type="file" id="bulkFileInput" accept=".xlsx,.csv" hidden>
+                        <button class="btn btn-secondary" onclick="document.getElementById('bulkFileInput').click()">تصفح الملفات</button>
+                    </div>
+
+                    <div id="bulkPreview" style="display: none; margin-top: 1.5rem;">
+                        <h4 style="margin-bottom: 1rem;">معاينة البيانات:</h4>
+                        <div style="max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px;">
+                            <table class="data-table" id="previewTable"></table>
+                        </div>
+                        <div class="form-actions" style="margin-top: 1.5rem;">
+                            <button class="btn btn-secondary" onclick="closeBulkUploadModal()">إلغاء</button>
+                            <button class="btn btn-primary" onclick="confirmBulkUpload()">
+                                رفع الطلاب (<span id="studentCount">0</span> طالب)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+    const fileInput = document.getElementById('bulkFileInput');
+    const uploadArea = document.getElementById('bulkUploadArea');
+
+    uploadArea.addEventListener('click', () => fileInput.click());
+
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.style.borderColor = '#667eea';
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.style.borderColor = '#e5e7eb';
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.style.borderColor = '#e5e7eb';
+        const file = e.dataTransfer.files[0];
+        if (file) handleBulkFile(file);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) handleBulkFile(file);
+    });
+}
+
+let bulkStudentsData = [];
+
+function handleBulkFile(file) {
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+        const data = e.target.result;
+
+        if (file.name.endsWith('.csv')) {
+            parseCSV(data);
+        } else {
+            UI.showNotification('يرجى استخدام ملف CSV أو تثبيت مكتبة لقراءة Excel');
+        }
+    };
+
+    if (file.name.endsWith('.csv')) {
+        reader.readAsText(file);
+    } else {
+        reader.readAsArrayBuffer(file);
+    }
+}
+
+function parseCSV(data) {
+    // Detect separator (semicolon for Excel Arabic/Euro, comma for standard)
+    const firstLine = data.split('\n')[0];
+    const separator = firstLine.includes(';') ? ';' : ',';
+
+    // Clear any "sep=;" markers if present (Excel trick)
+    const processedData = data.replace(/^sep=.\r?\n/, '');
+
+    const lines = processedData.trim().split('\n');
+    bulkStudentsData = [];
+
+    for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(separator);
+        if (values.length >= 2) { // Allow minimal data
+            bulkStudentsData.push({
+                studentName: values[0] ? values[0].trim() : '',
+                studentLevel: values[1] ? values[1].trim() : '',
+                studentGrade: values[2] ? values[2].trim() : '',
+                parentName: values[3] ? values[3].trim() : '',
+                parentEmail: values[4] ? values[4].trim() : '',
+                parentWhatsapp: values[5] ? values[5].trim() : '',
+                sendMethod: values[6] ? values[6].trim() : 'whatsapp',
+                contractYear: values[7] ? values[7].trim() : ''
+            });
+        }
+    }
+
+    displayBulkPreview();
+}
+
+function displayBulkPreview() {
+    const preview = document.getElementById('bulkPreview');
+    const table = document.getElementById('previewTable');
+    const count = document.getElementById('studentCount');
+
+    count.textContent = bulkStudentsData.length;
+
+    let tableHTML = `
+        <thead>
+            <tr>
+                <th>اسم الطالب</th>
+                <th>المرحلة</th>
+                <th>الصف</th>
+                <th>ولي الأمر</th>
+                <th>الواتساب</th>
+            </tr>
+        </thead>
+        <tbody>
+    `;
+
+    bulkStudentsData.forEach(student => {
+        tableHTML += `
+            <tr>
+                <td>${student.studentName}</td>
+                <td>${student.studentLevel || '-'}</td>
+                <td>${student.studentGrade}</td>
+                <td>${student.parentName}</td>
+                <td>${student.parentWhatsapp}</td>
+            </tr>
+        `;
+    });
+
+    tableHTML += '</tbody>';
+    table.innerHTML = tableHTML;
+    preview.style.display = 'block';
+}
+
+function confirmBulkUpload() {
+    db.saveBulkStudents(bulkStudentsData);
+    closeBulkUploadModal();
+    UI.updateStats();
+    UI.renderStudents();
+    UI.showNotification(`تم إضافة ${bulkStudentsData.length} طالب بنجاح!`);
+    bulkStudentsData = [];
+}
+
+function closeBulkUploadModal() {
+    const modal = document.getElementById('bulkUploadModal');
+    if (modal) modal.remove();
+}
+
+function downloadTemplate() {
+    // Use semicolon (;) which is better for Excel in Arabic regions
+    // Add "sep=;" at the top to tell Excel exactly what the separator is
+    const header = 'اسم الطالب;المرحلة الدراسية;الصف;اسم ولي الأمر;البريد الإلكتروني;رقم الواتساب;طريقة الإرسال;السنة الدراسية';
+    const example = 'محمد أحمد;الابتدائية;5;أحمد محمد;ahmad@example.com;+966501234567;whatsapp;2024-2025';
+    const csvContent = `sep=;\n${header}\n${example}`;
+
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'نموذج_الطلاب.csv';
+    link.click();
+}
+
+// ---------------------------------------------------------
+// APP INITIALIZATION & NAVIGATION LOGIC
+// ---------------------------------------------------------
+
+const ContractUI = {
+    insertVariable(variable) {
+        const textarea = document.getElementById('contractText');
+        if (!textarea) return;
+
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = textarea.value;
+
+        textarea.value = text.substring(0, start) + variable + text.substring(end);
+        textarea.focus();
+        textarea.selectionStart = textarea.selectionEnd = start + variable.length;
+    },
+
+    renderSignedContracts(filteredStudents = null) {
+        const students = filteredStudents || db.getStudents().filter(s => s.contractStatus === 'signed' || s.contractStatus === 'verified'); // Show signed or verified
+        const tableBody = document.getElementById('signedContractsTableBody');
+
+        if (!tableBody) return;
+
+        if (students.length === 0) {
+            const message = filteredStudents ? 'لا توجد نتائج مطابقة للبحث' : 'لا توجد عقود موقعة حتى الآن';
+            tableBody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 2rem;">${message}</td></tr>`;
+            return;
+        }
+
+        tableBody.innerHTML = students.map(student => `
+            <tr>
+                <td><input type="checkbox" class="contract-check" value="${student.id}"></td>
+                <td>${student.studentName}</td>
+                <td>${student.parentName}</td>
+                <td>${student.signedAt ? new Date(student.signedAt).toLocaleDateString('ar-SA') : 'غير محدد'}</td>
+                <td>
+                    <span class="status-badge ${student.contractStatus === 'verified' ? 'status-signed' : 'status-sent'}">
+                        ${student.contractStatus === 'verified' ? 'موثق' : 'موقع'}
+                    </span>
+                </td>
+                <td>
+                    <div style="display: flex; gap: 5px;">
+                        ${student.contractStatus === 'signed' ? `
+                        <button class="btn-icon" onclick="markAsSigned('${student.id}')" title="تأكيد الاستلام والتوثيق" style="color: #38b2ac;">
+                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                        </button>
+                        ` : ''}
+                        <button class="btn-icon" onclick="UI.previewContract('${student.id}')" title="معاينة العقد">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                        <button class="btn-icon" onclick="UI.downloadContractPdf('${student.id}')" title="تحميل PDF الموثق">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    },
+
+    downloadSelectedContracts() {
+        const checked = document.querySelectorAll('.contract-check:checked');
+        if (checked.length === 0) {
+            alert('يرجى اختيار عقد واحد على الأقل للتحميل');
+            return;
+        }
+
+        alert(`سيتم فتح ${checked.length} عقود للطباعة... يرجى حفظها كملفات PDF`);
+
+        checked.forEach((checkbox, index) => {
+            setTimeout(() => {
+                UI.downloadContractPdf(checkbox.value);
+            }, index * 800); // Reduced delay from 1500ms to 800ms
+        });
+    },
+
+    renderTemplates() {
+        const grid = document.getElementById('contractsGrid');
+        if (!grid) return;
+
+        const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+
+        if (templates.length === 0) {
+            grid.innerHTML = `
+                <div style="grid-column: 1/-1; text-align: center; padding: 3rem; background: #f9fafb; border-radius: 8px;">
+                    <p style="color: #666;">لا توجد نماذج عقود محفوظة. ابدأ بإنشاء عقد جديد.</p>
+                </div>
+            `;
+            return;
+        }
+
+        grid.innerHTML = templates.map(t => `
+            <div class="contract-card">
+                <div class="contract-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                </div>
+                <div class="contract-info">
+                    <h3>${t.title} ${t.isDefault ? '<span style="font-size:0.7em; background:#e6fffa; color:#38b2ac; padding:2px 6px; border-radius:4px;">افتراضي</span>' : ''}</h3>
+                    <p>تم الإنشاء: ${new Date(t.createdAt).toLocaleDateString('ar-SA')}</p>
+                </div>
+                <div class="contract-actions-btns" style="margin-top: 1rem; display:flex; gap:0.5rem;">
+                    <button class="btn btn-primary btn-small" onclick="ContractUI.editTemplate('${t.id}')" style="width:100%;">تعديل</button>
+                    <button class="btn btn-secondary btn-small" onclick="ContractUI.deleteTemplate('${t.id}')" style="width:100%; color: #ef4444; border-color: #ef4444;">حذف</button>
+                </div>
+            </div>
+        `).join('');
+    },
+
+    editTemplate(id) {
+        const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+        const template = templates.find(t => t.id === id);
+
+        if (template) {
+            document.getElementById('contractTitle').value = template.title;
+            document.getElementById('contractText').value = template.content;
+            document.getElementById('setAsDefault').checked = template.isDefault || false;
+
+            // Open modal
+            document.getElementById('contractEditorModal').classList.add('active');
+
+            // Handle save as update (will create new for now, ideally update ID)
+            // Ideally we should update the form submission logic to handle edits, 
+            // but for simplicity, the user can just save a new one and delete old, or we can improve this later.
+            // Let's add a hidden ID field to support updates properly.
+
+            const form = document.getElementById('contractForm');
+            form.dataset.editingId = id;
+        }
+    },
+
+    deleteTemplate(id) {
+        if (confirm('هل أنت متأكد من حذف هذا النموذج؟')) {
+            let templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+            templates = templates.filter(t => t.id !== id);
+            localStorage.setItem('contractTemplates', JSON.stringify(templates));
+            this.renderTemplates();
+            UI.showNotification('تم حذف النموذج');
+        }
+    }
+};
+
+function markAsSigned(id) {
+    console.log('markAsSigned called with id:', id);
+
+    if (confirm('هل تود تأكيد استلام العقد الموقع من ولي الأمر؟\n\nسيتم تغيير حالة الطالب إلى "موثق" وإضافته لسجل العقود.')) {
+        const students = db.getStudents();
+        const student = students.find(s => String(s.id) === String(id));
+
+        console.log('Found student:', student ? student.studentName : 'NOT FOUND');
+
+        if (student) {
+            student.contractStatus = 'verified';
+            student.verifiedAt = new Date().toISOString();
+
+            // If no signature exists, add a placeholder note
+            if (!student.signedAt) {
+                student.signedAt = new Date().toISOString();
+            }
+
+            db.saveStudent(student);
+
+            UI.updateStats();
+            UI.renderStudents();
+            if (typeof ContractUI !== 'undefined') {
+                ContractUI.renderSignedContracts();
+            }
+            UI.showNotification('✅ تم توثيق استلام العقد بنجاح');
+        } else {
+            console.error('Student not found with id:', id);
+            UI.showNotification('❌ لم يتم العثور على الطالب');
+        }
+    }
+}
+
+function initContractModal() {
+    const modal = document.getElementById('contractEditorModal');
+    const openBtn = document.getElementById('newContractBtn');
+    const closeBtn = document.getElementById('closeContractModalBtn');
+    const cancelBtn = document.getElementById('cancelContractBtn');
+
+    if (openBtn) {
+        openBtn.addEventListener('click', () => {
+            modal.classList.add('active');
+        });
+    }
+
+    const closeModal = () => {
+        modal.classList.remove('active');
+    };
+
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+    // Tab Switching Logic
+    const tabs = document.querySelectorAll('.input-tab');
+    const methods = {
+        'write': document.getElementById('writeMethod'),
+        'upload': document.getElementById('uploadMethod')
+    };
+
+    if (tabs.length > 0) {
+        // Set first tab active by default if none
+        if (!document.querySelector('.input-tab.active')) tabs[0].classList.add('active');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+
+                const methodType = tab.dataset.method;
+                if (methodType === 'write') {
+                    methods['write'].style.display = 'block';
+                    methods['upload'].style.display = 'none';
+                } else {
+                    methods['write'].style.display = 'none';
+                    methods['upload'].style.display = 'block';
+                }
+            });
+        });
+    }
+
+    // File Upload Handler
+    const browseBtn = document.getElementById('browseContractFile');
+    const fileInput = document.getElementById('contractFileInput');
+    const uploadArea = document.getElementById('contractUploadArea');
+
+    const handleContractFile = (file) => {
+        if (!file) return;
+
+        const extension = file.name.split('.').pop().toLowerCase();
+
+        if (extension === 'txt') {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                document.getElementById('contractText').value = e.target.result;
+                if (tabs[0]) tabs[0].click();
+                UI.showNotification('تم استيراد النص بنجاح');
+            };
+            reader.readAsText(file);
+        } else if (['doc', 'docx', 'pdf'].includes(extension)) {
+            alert(`تم اختيار ملف (${extension.toUpperCase()}).\n\nنظراً لأن هذا النوع من الملفات يحتوي على تنسيقات معقدة، يرجى فتح الملف ونسخ النص ولصقه في خانة "كتابة النص" لضمان عمل المتغيرات (مثل اسم الطالب) بشكل صحيح.`);
+            if (tabs[0]) tabs[0].click();
+        } else {
+            alert('عفواً، يرجى رفع ملف نصي أو Word أو PDF.');
+        }
+    };
+
+    if (browseBtn && fileInput && uploadArea) {
+        browseBtn.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => handleContractFile(e.target.files[0]));
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = '#667eea';
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = '#e5e7eb';
+            handleContractFile(e.dataTransfer.files[0]);
+        });
+    }
+}
+
+function initContractForm() {
+    const form = document.getElementById('contractForm');
+    if (!form) return;
+
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+
+        const title = document.getElementById('contractTitle').value;
+        const content = document.getElementById('contractText').value;
+        const isDefault = document.getElementById('setAsDefault').checked;
+
+        if (!title || !content) {
+            alert('يرجى تعبئة العنوان ونص العقد');
+            return;
+        }
+
+        let templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+        const editingId = form.dataset.editingId;
+
+        if (editingId) {
+            // Update existing
+            const index = templates.findIndex(t => t.id === editingId);
+            if (index !== -1) {
+                templates[index] = {
+                    ...templates[index],
+                    title,
+                    content,
+                    isDefault,
+                    updatedAt: new Date().toISOString()
+                };
+            }
+        } else {
+            // Create new
+            const newTemplate = {
+                id: Date.now().toString(),
+                title: title,
+                content: content,
+                isDefault: isDefault,
+                createdAt: new Date().toISOString()
+            };
+
+            if (isDefault) {
+                templates.forEach(t => t.isDefault = false);
+            } else if (templates.length === 0) {
+                newTemplate.isDefault = true;
+            }
+            templates.push(newTemplate);
+        }
+
+        // Handle Default Flag globally
+        if (isDefault) {
+            templates.forEach(t => {
+                if (t.id !== (editingId || templates[templates.length - 1].id)) {
+                    t.isDefault = false;
+                }
+            });
+        }
+
+        localStorage.setItem('contractTemplates', JSON.stringify(templates));
+
+        UI.showNotification(editingId ? 'تم تعديل النموذج بنجاح' : 'تم حفظ نموذج العقد بنجاح');
+        document.getElementById('contractEditorModal').classList.remove('active');
+        form.reset();
+        delete form.dataset.editingId; // Clear editing state
+
+        // Refresh grid
+        ContractUI.renderTemplates();
+    });
+}
+
+function initSearch() {
+    const searchInput = document.getElementById('studentSearch');
+    const signedSearchInput = document.getElementById('signedContractSearch');
+
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            const students = db.getStudents();
+
+            if (query === '') {
+                UI.renderStudents(); // Reset
+                return;
+            }
+
+            const filtered = students.filter(s =>
+                (s.studentName && s.studentName.toLowerCase().includes(query)) ||
+                (s.parentName && s.parentName.toLowerCase().includes(query)) ||
+                (s.parentWhatsapp && s.parentWhatsapp.includes(query)) ||
+                (s.studentGrade && s.studentGrade.toString().includes(query))
+            );
+
+            UI.renderStudents(filtered);
+        });
+    }
+
+    if (signedSearchInput) {
+        signedSearchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            const signedStudents = db.getStudents().filter(s => s.contractStatus === 'signed' || s.contractStatus === 'verified');
+
+            if (query === '') {
+                ContractUI.renderSignedContracts(); // Reset
+                return;
+            }
+
+            const filtered = signedStudents.filter(s =>
+                (s.studentName && s.studentName.toLowerCase().includes(query)) ||
+                (s.parentName && s.parentName.toLowerCase().includes(query)) ||
+                (s.parentWhatsapp && s.parentWhatsapp.includes(query))
+            );
+
+            ContractUI.renderSignedContracts(filtered);
+        });
+    }
+}
+
+function initTabs() {
+    const navLinks = document.querySelectorAll('.nav-link');
+    const pages = document.querySelectorAll('.page');
+
+    navLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const pageId = link.dataset.page;
+
+            // Update active link
+            navLinks.forEach(l => l.classList.remove('active'));
+            link.classList.add('active');
+
+            // Update active page
+            pages.forEach(p => p.classList.remove('active'));
+            document.getElementById(`${pageId}-page`).classList.add('active');
+
+            // Specialized page loading
+            if (pageId === 'dashboard') {
+                UI.updateStats();
+                UI.renderStudents();
+            } else if (pageId === 'contracts') {
+                ContractUI.renderSignedContracts();
+            } else if (pageId === 'settings') {
+                const settings = db.getSettings();
+                document.getElementById('schoolStampInput').value = settings.schoolStampText || '';
+                document.getElementById('adminUsernameSetting').value = settings.adminUsername || 'admin';
+                document.getElementById('adminPassSetting').value = settings.adminPassword || 'admin';
+                document.getElementById('schoolLevelsInput').value = (settings.levels || []).join(', ');
+                document.getElementById('schoolGradesInput').value = (settings.grades || []).join(', ');
+                if (document.getElementById('customFieldsSetting')) {
+                    document.getElementById('customFieldsSetting').value = (settings.customFields || []).join(', ');
+                }
+                if (settings.schoolLogo) {
+                    document.getElementById('settingsLogoPreview').src = settings.schoolLogo;
+                }
+                UI.updateStampPreview();
+            }
+        });
+    });
+}
+
+UI.saveSettings = function () {
+    const stampText = document.getElementById('schoolStampInput').value;
+    const adminUser = document.getElementById('adminUsernameSetting').value;
+    const adminPass = document.getElementById('adminPassSetting').value;
+    const levels = document.getElementById('schoolLevelsInput').value.split(',').map(s => s.trim()).filter(s => s);
+    const grades = document.getElementById('schoolGradesInput').value.split(',').map(s => s.trim()).filter(s => s);
+    const logo = document.getElementById('settingsLogoPreview').src; // Get current src (might be base64)
+
+    const customFieldsRaw = document.getElementById('customFieldsSetting')?.value || '';
+    const customFields = customFieldsRaw.split(',').map(s => s.trim()).filter(s => s);
+
+    db.saveSettings({
+        schoolStampText: stampText,
+        adminUsername: adminUser,
+        adminPassword: adminPass,
+        levels: levels,
+        grades: grades,
+        customFields: customFields,
+        schoolLogo: logo.startsWith('data:') ? logo : '' // Save only if it's base64
+    });
+
+    UI.applyBranding();
+    UI.populateDynamicSelects();
+    UI.showNotification('✅ تم حفظ جميع الإعدادات بنجاح');
+};
+
+UI.handleLogoUpload = function (input) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            document.getElementById('settingsLogoPreview').src = e.target.result;
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+};
+
+UI.applyBranding = function () {
+    const settings = db.getSettings();
+    const logo = settings.schoolLogo || 'assets/logo.png';
+
+    if (document.getElementById('loginLogo')) document.getElementById('loginLogo').src = logo;
+    if (document.getElementById('navLogo')) document.getElementById('navLogo').src = logo;
+    if (document.getElementById('settingsLogoPreview')) document.getElementById('settingsLogoPreview').src = logo;
+};
+
+UI.updateStampPreview = function () {
+    const input = document.getElementById('schoolStampInput');
+    const preview = document.getElementById('stampPreviewText');
+    if (input && preview) {
+        preview.textContent = input.value || 'الإدارة';
+    }
+};
+
+UI.handleLogin = function () {
+    const userInput = document.getElementById('adminUserInput');
+    const passInput = document.getElementById('adminPassInput');
+    const settings = db.getSettings();
+
+    if (!userInput || !passInput) {
+        console.error('Login inputs not found');
+        return;
+    }
+
+    const inputUser = userInput.value.trim().toLowerCase();
+    const inputPass = passInput.value.trim();
+
+    // Default credentials as a permanent fallback
+    const defaultUser = 'admin';
+    const defaultPass = 'admin';
+
+    const targetUser = String(settings.adminUsername || defaultUser).toLowerCase();
+    const targetPass = String(settings.adminPassword || defaultPass);
+
+    console.log('Attempting login...');
+
+    if ((inputUser === targetUser && inputPass === targetPass) ||
+        (inputUser === defaultUser && inputPass === defaultPass)) {
+
+        sessionStorage.setItem('isAdminAuthenticated', 'true');
+        const overlay = document.getElementById('loginOverlay');
+        if (overlay) {
+            overlay.style.opacity = '0';
+            setTimeout(() => {
+                overlay.style.display = 'none';
+            }, 300);
+        }
+        UI.showNotification('✅ تم تسجيل الدخول بنجاح');
+    } else {
+        const error = document.getElementById('loginError');
+        if (error) {
+            error.style.display = 'block';
+            error.innerHTML = `بيانات الدخول غير صحيحة.<br>
+                <small style="display:block; margin-top:0.5rem; color:#718096;">تلميح: جرب admin / admin</small>
+                <small style="cursor:pointer; text-decoration: underline; color: var(--primary-solid); display:block; margin-top:0.5rem;" onclick="UI.emergencyReset()">نسيت بيانات الدخول؟ استعادة الافتراضي</small>`;
+        }
+    }
+};
+
+UI.emergencyReset = function () {
+    if (confirm('هل تريد استعادة بيانات الدخول الافتراضية (admin / admin)؟')) {
+        const settings = db.getSettings();
+        settings.adminUsername = 'admin';
+        settings.adminPassword = 'admin';
+        db.saveSettings(settings);
+        sessionStorage.setItem('isAdminAuthenticated', 'true');
+        location.reload();
+    }
+};
+
+UI.handleLogout = function () {
+    sessionStorage.removeItem('isAdminAuthenticated');
+    window.location.reload();
+};
+
+UI.populateDynamicSelects = function () {
+    const settings = db.getSettings();
+    const levelSelect = document.getElementById('studentLevel');
+    const gradeSelect = document.getElementById('studentGrade');
+    const customContainer = document.getElementById('dynamicCustomFieldsContainer');
+
+    if (levelSelect) {
+        levelSelect.innerHTML = '<option value="">اختر المرحلة</option>' +
+            settings.levels.map(l => `<option value="${l}">${l}</option>`).join('');
+    }
+
+    if (gradeSelect) {
+        gradeSelect.innerHTML = '<option value="">اختر الصف</option>' +
+            settings.grades.map(g => `<option value="${g}">${g}</option>`).join('');
+    }
+
+    if (customContainer) {
+        customContainer.innerHTML = (settings.customFields || []).map(f => `
+            <div class="form-group" style="flex: 1 1 200px;">
+                <label for="custom_${f}">${f}</label>
+                <input type="text" id="custom_${f}" data-custom-label="${f}" placeholder="أدخل ${f}">
+            </div>
+        `).join('');
+    }
+};
+
+function startApp() {
+    try {
+        console.log('Starting App...');
+        UI.applyBranding();
+
+        // Add Login Listeners
+        const userIn = document.getElementById('adminUserInput');
+        const passIn = document.getElementById('adminPassInput');
+        if (userIn) userIn.addEventListener('keypress', (e) => e.key === 'Enter' && UI.handleLogin());
+        if (passIn) passIn.addEventListener('keypress', (e) => e.key === 'Enter' && UI.handleLogin());
+
+        // Bulk Select Listeners defined in renderStudents but "Select All" needs init
+        const selectAll = document.getElementById('selectAllDashboard');
+        if (selectAll) {
+            selectAll.addEventListener('change', (e) => {
+                const checkboxes = document.querySelectorAll('.student-checkbox');
+                checkboxes.forEach(cb => cb.checked = e.target.checked);
+                UI.handleSelectionChange();
+            });
+        }
+
+        // Check Auth
+        if (sessionStorage.getItem('isAdminAuthenticated') === 'true') {
+            const overlay = document.getElementById('loginOverlay');
+            if (overlay) overlay.style.display = 'none';
+        }
+
+        UI.updateStats();
+        UI.renderStudents();
+        UI.populateDynamicSelects();
+        UI.initCharts();
+        UI.initTheme();
+        if (typeof createBulkUploadButton === 'function') createBulkUploadButton();
+        if (typeof createBulkSendButton === 'function') createBulkSendButton();
+        if (typeof initTabs === 'function') initTabs();
+        if (typeof initContractModal === 'function') initContractModal();
+        if (typeof initContractForm === 'function') initContractForm();
+        if (typeof initSearch === 'function') initSearch();
+
+        // Initial Render
+        if (typeof ContractUI !== 'undefined') {
+            ContractUI.renderSignedContracts();
+            ContractUI.renderTemplates();
+        }
+
+        // Listen for storage changes (Real-time update when parent signs)
+        window.removeEventListener('storage', handleStorageChange);
+        window.addEventListener('storage', handleStorageChange);
+
+        console.log('App Started Successfully');
+    } catch (e) {
+        console.error('CRITICAL ERROR STARTING APP:', e);
+        alert('حدث خطأ أثناء تشغيل النظام: ' + e.message + '\n' + e.stack);
+    }
+}
+
+UI.initTheme = function () {
+    const themeToggle = document.getElementById('themeToggle');
+    const sunIcon = themeToggle?.querySelector('.sun');
+    const moonIcon = themeToggle?.querySelector('.moon');
+
+    const savedTheme = localStorage.getItem('appTheme') || 'light';
+    if (savedTheme === 'dark') {
+        document.body.classList.add('dark-mode');
+        if (sunIcon) sunIcon.style.display = 'none';
+        if (moonIcon) moonIcon.style.display = 'block';
+    }
+
+    themeToggle?.addEventListener('click', () => {
+        const isDark = document.body.classList.toggle('dark-mode');
+        localStorage.setItem('appTheme', isDark ? 'dark' : 'light');
+
+        if (sunIcon && moonIcon) {
+            sunIcon.style.display = isDark ? 'none' : 'block';
+            moonIcon.style.display = isDark ? 'block' : 'none';
+        }
+
+        // Refresh charts for new theme
+        UI.initCharts();
+    });
+};
+
+UI.charts = {};
+
+UI.initCharts = function () {
+    const stats = db.getStats();
+    const isDark = document.body.classList.contains('dark-mode');
+    const textColor = isDark ? '#94a3b8' : '#64748b';
+    const gridColor = isDark ? '#334155' : '#e2e8f0';
+
+    // Cleanup existing charts
+    if (UI.charts.stats) UI.charts.stats.destroy();
+    if (UI.charts.dist) UI.charts.dist.destroy();
+
+    const ctx1 = document.getElementById('statsChart')?.getContext('2d');
+    if (ctx1) {
+        UI.charts.stats = new Chart(ctx1, {
+            type: 'bar',
+            data: {
+                labels: ['إجمالي الطلاب', 'موقعة', 'انتظار', 'مرسلة'],
+                datasets: [{
+                    label: 'العدد',
+                    data: [stats.total, stats.signed, stats.pending, stats.sent],
+                    backgroundColor: ['#6366f1', '#10b981', '#f59e0b', '#3b82f6'],
+                    borderRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { grid: { color: gridColor }, ticks: { color: textColor } },
+                    x: { grid: { display: false }, ticks: { color: textColor } }
+                }
+            }
+        });
+    }
+
+    const ctx2 = document.getElementById('distributionChart')?.getContext('2d');
+    if (ctx2) {
+        UI.charts.dist = new Chart(ctx2, {
+            type: 'doughnut',
+            data: {
+                labels: ['موقعة', 'أخرى'],
+                datasets: [{
+                    data: [stats.signed, stats.total - stats.signed],
+                    backgroundColor: ['#10b981', '#e2e8f0'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '70%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { color: textColor, font: { family: 'Cairo' } }
+                    }
+                }
+            }
+        });
+    }
+};
+
+function handleStorageChange(e) {
+    if (e.key === 'students') {
+        console.log('Detected remote students change, refreshing UI...');
+        db.updateFromRemote();
+        UI.showNotification('🔄 تم تحديث البيانات تلقائياً');
+    }
+}
+
+// Listen for storage changes from other tabs/windows
+window.addEventListener('storage', handleStorageChange);
+
+// Manual refresh function
+UI.refreshData = function () {
+    console.log('Manual refresh triggered');
+    this.updateStats();
+    this.renderStudents();
+    if (typeof ContractUI !== 'undefined') {
+        ContractUI.renderSignedContracts();
+    }
+    this.showNotification('🔄 تم تحديث البيانات');
+};
+
+// Auto-refresh every 5 seconds to catch changes
+setInterval(() => {
+    if (document.visibilityState === 'visible') {
+        UI.updateStats();
+        UI.renderStudents();
+        if (typeof ContractUI !== 'undefined' && document.getElementById('signedContractsTableBody')) {
+            ContractUI.renderSignedContracts();
+        }
+    }
+}, 5000);
+
+// Make available globally
+window.db = db;
+window.UI = UI;
+window.ContractUI = ContractUI;
+window.markAsSigned = markAsSigned;
+
+// Call startApp when DOM is ready (re-run safely)
+// Call startApp when DOM is ready (re-run safely)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        startApp();
+        checkFirebase();
+    });
+} else {
+    startApp();
+    checkFirebase();
+}
+
+function checkFirebase() {
+    setTimeout(() => {
+        if (typeof isFirebaseConfigured !== 'undefined' && !isFirebaseConfigured) {
+            console.warn('Firebase setup required');
+            // Only show alert if we are on the admin dashboard
+            if (document.getElementById('statsGrid')) {
+                const overlay = document.createElement('div');
+                overlay.innerHTML = `
+                    <div style="position: fixed; bottom: 20px; right: 20px; background: #fff3cd; color: #856404; padding: 15px; border-radius: 8px; border: 1px solid #ffeeba; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 9999; max-width: 300px;">
+                        <h4 style="margin-top:0;font-size:16px;">⚠️ المزامنة السحابية غير مفعلة</h4>
+                        <p style="font-size:12px;margin-bottom:10px;">لتمكين مشاركة البيانات بين الأجهزة (جوال ولي الأمر ولابتوب الإدارة)، يجب إعداد Firebase.</p>
+                        <button onclick="this.parentElement.remove()" style="background:#856404;color:white;border:none;padding:5px 10px;border-radius:4px;cursor:pointer;">إغلاق</button>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+            }
+        } else if (typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured) {
+            UI.showNotification('✅ المزامنة السحابية نشطة');
+        }
+    }, 2000);
+}

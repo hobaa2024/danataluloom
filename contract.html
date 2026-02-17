@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>توقيع العقد المدرسي - منصة دانة العلوم</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --success-gradient: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            --danger-gradient: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            --primary-color: #667eea;
+            --primary-dark: #764ba2;
+            --success-color: #10b981;
+            --text-dark: #1e293b;
+            --text-muted: #64748b;
+            --bg-light: #f8fafc;
+            --border-color: #e2e8f0;
+            --white: #ffffff;
+            --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 15px rgba(0, 0, 0, 0.08);
+            --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.12);
+            --shadow-xl: 0 20px 50px rgba(0, 0, 0, 0.15);
+        }
+
+        body {
+            font-family: 'Cairo', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* Animated Background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+            background-size: 50px 50px;
+            animation: moveBackground 20s linear infinite;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        @keyframes moveBackground {
+            0% {
+                transform: translate(0, 0);
+            }
+
+            100% {
+                transform: translate(50px, 50px);
+            }
+        }
+
+        /* Header */
+        .contract-header {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(20px);
+            padding: 1.5rem 0;
+            box-shadow: var(--shadow-md);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            border-bottom: 2px solid rgba(102, 126, 234, 0.2);
+        }
+
+        .header-content {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo img {
+            height: 55px;
+            width: auto;
+            max-width: 200px;
+            object-fit: contain;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+        }
+
+        .theme-toggle {
+            background: var(--bg-light);
+            border: 2px solid var(--border-color);
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .theme-toggle:hover {
+            transform: rotate(180deg) scale(1.1);
+            background: var(--primary-gradient);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        /* Main Container */
+        .contract-container {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 0 20px 3rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Progress Bar */
+        .progress-tracker {
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-lg);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-tracker::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: var(--primary-gradient);
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: transform 0.5s ease;
+        }
+
+        .progress-tracker.step-1::before {
+            transform: scaleX(0.33);
+        }
+
+        .progress-tracker.step-2::before {
+            transform: scaleX(0.66);
+        }
+
+        .progress-tracker.step-3::before {
+            transform: scaleX(1);
+        }
+
+        .steps-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+        }
+
+        .step-line {
+            position: absolute;
+            top: 30px;
+            right: 15%;
+            left: 15%;
+            height: 3px;
+            background: var(--border-color);
+            z-index: 0;
+        }
+
+        .step-line-progress {
+            position: absolute;
+            top: 0;
+            right: 0;
+            height: 100%;
+            background: var(--primary-gradient);
+            transition: width 0.5s ease;
+            width: 0%;
+        }
+
+        .step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.8rem;
+            position: relative;
+            z-index: 1;
+            flex: 1;
+        }
+
+        .step-circle {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: white;
+            border: 3px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 1.3rem;
+            color: var(--text-muted);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        .step.active .step-circle {
+            background: var(--primary-gradient);
+            border-color: var(--primary-color);
+            color: white;
+            transform: scale(1.15);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .step.completed .step-circle {
+            background: var(--success-gradient);
+            border-color: var(--success-color);
+            color: white;
+            animation: completePulse 0.6s ease;
+        }
+
+        .step.completed .step-circle::after {
+            content: '✓';
+            position: absolute;
+            font-size: 1.5rem;
+        }
+
+        @keyframes completePulse {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.2);
+            }
+        }
+
+        .step-label {
+            font-weight: 700;
+            font-size: 0.95rem;
+            color: var(--text-muted);
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .step.active .step-label {
+            color: var(--primary-color);
+            transform: scale(1.05);
+        }
+
+        .step.completed .step-label {
+            color: var(--success-color);
+        }
+
+        /* Section Cards */
+        .section-card {
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            box-shadow: var(--shadow-md);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 2px solid transparent;
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fadeInUp 0.6s ease forwards;
+        }
+
+        @keyframes fadeInUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .section-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+            border-color: rgba(102, 126, 234, 0.2);
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--bg-light);
+        }
+
+        .section-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
+            background: var(--primary-gradient);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 800;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .section-title {
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: var(--text-dark);
+        }
+
+        .section-subtitle {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-top: 0.3rem;
+        }
+
+        /* Contract Details Grid */
+        .contract-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding: 1.5rem;
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border-radius: 12px;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
+
+        .detail-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .detail-value {
+            font-size: 1.05rem;
+            color: var(--text-dark);
+            font-weight: 700;
+        }
+
+        /* Contract Viewer */
+        .contract-viewer {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 2px solid var(--border-color);
+            padding: 1rem;
+            border-radius: 12px;
+            background: var(--bg-light);
+            line-height: 1.7;
+            position: relative;
+            font-size: 0.95rem;
+        }
+
+        .contract-viewer::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .contract-viewer::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .contract-viewer::-webkit-scrollbar-thumb {
+            background: var(--primary-gradient);
+            border-radius: 10px;
+        }
+
+        .contract-viewer::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-dark);
+        }
+
+        .contract-text h3 {
+            color: var(--primary-color);
+            margin-bottom: 0.8rem;
+            font-size: 1.1rem;
+        }
+
+        .contract-actions {
+            margin-top: 1rem;
+            display: flex;
+            gap: 0.8rem;
+        }
+
+        /* Upload Area */
+        .upload-area {
+            border: 3px dashed var(--border-color);
+            border-radius: 16px;
+            padding: 2.5rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            background: var(--bg-light);
+        }
+
+        .upload-area:hover {
+            border-color: var(--primary-color);
+            background: rgba(102, 126, 234, 0.05);
+            transform: scale(1.01);
+        }
+
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.7;
+        }
+
+        .upload-text {
+            color: var(--text-muted);
+            margin-bottom: 1.5rem;
+            font-size: 1.05rem;
+        }
+
+        .upload-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .uploaded-preview {
+            display: none;
+            position: relative;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 2px solid var(--success-color);
+            background: white;
+            padding: 1rem;
+        }
+
+        .preview-image {
+            max-height: 250px;
+            border-radius: 12px;
+            display: block;
+            margin: 0 auto;
+        }
+
+        .remove-btn {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            background: var(--danger-gradient);
+            color: white;
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            box-shadow: var(--shadow-md);
+        }
+
+        .remove-btn:hover {
+            transform: scale(1.1) rotate(90deg);
+            box-shadow: var(--shadow-lg);
+        }
+
+        /* Signature Canvas */
+        .signature-container {
+            position: relative;
+        }
+
+        #signatureCanvas {
+            border: 3px dashed var(--border-color);
+            border-radius: 16px;
+            cursor: crosshair;
+            touch-action: none;
+            background: white;
+            width: 100%;
+            height: 220px;
+            transition: all 0.3s ease;
+        }
+
+        #signatureCanvas:hover {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+        }
+
+        #signatureCanvas.has-signature {
+            border-style: solid;
+            border-color: var(--success-color);
+        }
+
+        .signature-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1rem;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            cursor: pointer;
+            padding: 0.8rem 1.2rem;
+            background: var(--bg-light);
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            flex: 1;
+        }
+
+        .checkbox-wrapper:hover {
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .checkbox-wrapper input[type="checkbox"] {
+            width: 22px;
+            height: 22px;
+            cursor: pointer;
+            accent-color: var(--primary-color);
+        }
+
+        .checkbox-wrapper label {
+            font-weight: 600;
+            color: var(--text-dark);
+            cursor: pointer;
+            font-size: 1.05rem;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 0.9rem 1.8rem;
+            border: none;
+            border-radius: 12px;
+            font-family: 'Cairo', sans-serif;
+            font-weight: 700;
+            font-size: 1.05rem;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            justify-content: center;
+            text-decoration: none;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-primary {
+            background: var(--primary-gradient);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: white;
+            color: var(--text-dark);
+            border: 2px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .btn-success {
+            background: var(--success-gradient);
+            color: white;
+        }
+
+        .btn-large {
+            padding: 1.2rem 2.5rem;
+            font-size: 1.3rem;
+            width: 100%;
+            height: auto;
+            min-height: 65px;
+            border-radius: 16px;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn-icon {
+            margin-left: 0.5rem;
+            font-size: 1.2rem;
+        }
+
+        /* Success Page */
+        .success-container {
+            display: none;
+            max-width: 700px;
+            margin: 2rem auto;
+            padding: 0 20px;
+        }
+
+        .success-card {
+            background: white;
+            border-radius: 24px;
+            padding: 3rem 2rem;
+            text-align: center;
+            box-shadow: var(--shadow-xl);
+            animation: successPopIn 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        @keyframes successPopIn {
+            0% {
+                opacity: 0;
+                transform: scale(0.8) translateY(40px);
+            }
+
+            100% {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .success-icon {
+            width: 100px;
+            height: 100px;
+            background: var(--success-gradient);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3.5rem;
+            margin: 0 auto 1.5rem;
+            animation: successPulse 2s ease infinite;
+            box-shadow: 0 10px 30px rgba(16, 185, 129, 0.3);
+        }
+
+        @keyframes successPulse {
+
+            0%,
+            100% {
+                transform: scale(1);
+                box-shadow: 0 10px 30px rgba(16, 185, 129, 0.3);
+            }
+
+            50% {
+                transform: scale(1.05);
+                box-shadow: 0 15px 40px rgba(16, 185, 129, 0.4);
+            }
+        }
+
+        .success-title {
+            font-size: 2rem;
+            font-weight: 900;
+            color: var(--text-dark);
+            margin-bottom: 1rem;
+        }
+
+        .success-subtitle {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+        }
+
+        .contract-info {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            padding: 2rem;
+            border-radius: 16px;
+            margin: 2rem 0;
+            border: 2px solid rgba(102, 126, 234, 0.1);
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.8rem 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .info-value {
+            color: var(--text-dark);
+            font-weight: 800;
+        }
+
+        .success-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .contract-container {
+                padding: 0 15px 2rem;
+            }
+
+            .progress-tracker {
+                padding: 1.5rem 1rem;
+            }
+
+            .steps-container {
+                gap: 0.5rem;
+            }
+
+            .step-circle {
+                width: 50px;
+                height: 50px;
+                font-size: 1.1rem;
+            }
+
+            .step-label {
+                font-size: 0.8rem;
+            }
+
+            .section-card {
+                padding: 1.5rem;
+            }
+
+            .section-title {
+                font-size: 1.2rem;
+            }
+
+            .contract-details {
+                grid-template-columns: 1fr;
+            }
+
+            .upload-buttons {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+            }
+        }
+
+        /* Dark Mode Support */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --text-dark: #f1f5f9;
+                --text-muted: #94a3b8;
+                --bg-light: #1e293b;
+                --white: #0f172a;
+                --border-color: #334155;
+            }
+        }
+
+        /* Loading State */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Header -->
+    <header class="contract-header">
+        <div class="header-content">
+            <div class="logo">
+                <img src="assets/logo.png" alt="مدارس دانة العلوم">
+            </div>
+            <button class="theme-toggle" id="themeToggle" title="تبديل الوضع">🌙</button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="contract-container" id="mainContainer">
+        <!-- Progress Tracker -->
+        <div class="progress-tracker step-1" id="progressTracker">
+            <div class="steps-container">
+                <div class="step-line">
+                    <div class="step-line-progress" id="stepLineProgress"></div>
+                </div>
+                <div class="step active" id="step1">
+                    <div class="step-circle">1</div>
+                    <div class="step-label">معلومات العقد</div>
+                </div>
+                <div class="step" id="step2">
+                    <div class="step-circle">2</div>
+                    <div class="step-label">إرفاق الهوية</div>
+                </div>
+                <div class="step" id="step3">
+                    <div class="step-circle">3</div>
+                    <div class="step-label">التوقيع</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 1: Contract Details (Hidden as per user request, only contract content shown) -->
+        <div class="section-card" style="animation-delay: 0.1s">
+            <div class="section-header" style="display: none;">
+                <div class="section-icon">📋</div>
+                <div>
+                    <div class="section-title">معلومات الطالب والعقد</div>
+                    <div class="section-subtitle">تأكد من صحة البيانات قبل المتابعة</div>
+                </div>
+            </div>
+
+            <div class="contract-details" style="display: none;">
+                <div class="detail-item">
+                    <div class="detail-label">اسم الطالب</div>
+                    <div class="detail-value" id="contractStudentName">-</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">الصف الدراسي</div>
+                    <div class="detail-value" id="contractGrade">-</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">السنة الدراسية</div>
+                    <div class="detail-value" id="contractYear">-</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">ولي الأمر</div>
+                    <div class="detail-value" id="contractParentName">-</div>
+                </div>
+            </div>
+
+            <div class="contract-viewer" id="contractViewer" style="margin-top: 0; padding-top: 10px;">
+                <div class="contract-text">جاري تحميل نص العقد...</div>
+            </div>
+
+            <div class="contract-actions">
+                <button class="btn btn-secondary" id="zoomContract">
+                    🔍 تكبير النص
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 2: ID Upload -->
+        <div class="section-card" style="animation-delay: 0.2s">
+            <div class="section-header">
+                <div class="section-icon">🪪</div>
+                <div>
+                    <div class="section-title">إرفاق صورة الهوية</div>
+                    <div class="section-subtitle">قم بتصوير الهوية أو اختر صورة من الجهاز</div>
+                </div>
+            </div>
+
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📸</div>
+                <div class="upload-text">اختر صورة الهوية أو التقط صورة جديدة</div>
+                <input type="file" id="idUpload" accept="image/*" style="display: none;">
+                <input type="file" id="idCapture" accept="image/*" capture="environment" style="display: none;">
+                <div class="upload-buttons">
+                    <button class="btn btn-primary" onclick="document.getElementById('idUpload').click()">
+                        📁 اختيار من الجهاز
+                    </button>
+                    <button class="btn btn-secondary" id="captureBtn">
+                        📷 التقاط صورة
+                    </button>
+                </div>
+            </div>
+
+            <div class="uploaded-preview" id="uploadedPreview">
+                <button class="remove-btn" id="removeFile">×</button>
+                <img id="previewImage" src="" class="preview-image" alt="معاينة الهوية">
+            </div>
+        </div>
+
+        <!-- Step 3: Signature -->
+        <div class="section-card" style="animation-delay: 0.3s">
+            <div class="section-header">
+                <div class="section-icon">✍️</div>
+                <div>
+                    <div class="section-title">التوقيع والموافقة</div>
+                    <div class="section-subtitle">وقّع بإصبعك أو بالقلم على الشاشة</div>
+                </div>
+            </div>
+
+            <div class="signature-container">
+                <canvas id="signatureCanvas"></canvas>
+                <div class="signature-controls">
+                    <button class="btn btn-secondary" id="clearSignature">
+                        🗑️ مسح التوقيع
+                    </button>
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="agreeTerms">
+                        <label for="agreeTerms">أوافق على جميع شروط العقد</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Submit Button -->
+        <button class="btn btn-success btn-large" id="submitContract" disabled>
+            <span id="submitText">إرسال العقد الآن</span>
+            <span class="btn-icon">✈️</span>
+        </button>
+    </div>
+
+    <!-- Success Page -->
+    <div class="success-container" id="successContainer">
+        <div class="success-card">
+            <div class="success-icon">✓</div>
+            <h1 class="success-title">تم التوقيع بنجاح! 🎉</h1>
+            <p class="success-subtitle">شكراً لك! تم توقيع العقد وإرساله بنجاح</p>
+
+            <div class="contract-info">
+                <div class="info-row">
+                    <div class="info-label">رقم العقد</div>
+                    <div class="info-value" id="contractNumber">-</div>
+                </div>
+                <div class="info-row">
+                    <div class="info-label">تاريخ التوقيع</div>
+                    <div class="info-value" id="submitDate">-</div>
+                </div>
+                <div class="info-row">
+                    <div class="info-label">الحالة</div>
+                    <div class="info-value" style="color: var(--success-color);">مكتمل ✓</div>
+                </div>
+            </div>
+
+            <div class="success-actions" id="successActions">
+                <!-- Will be filled by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
+    <script>
+        if (typeof PDFLib === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"><\/script>');
+        }
+    </script>
+    <script src="font-data.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js"></script>
+    <script>
+        // Wait a moment for the library to initialize, then check
+        setTimeout(() => {
+            if (typeof ArabicReshaper === 'undefined' && typeof window.ArabicReshaper === 'undefined') {
+                console.warn("Primary ArabicReshaper failed to load, trying fallback...");
+                const fallback = document.createElement('script');
+                fallback.src = 'https://unpkg.com/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js';
+                fallback.onerror = () => console.error("Both ArabicReshaper sources failed. Arabic text in PDF may not display correctly.");
+                document.head.appendChild(fallback);
+            } else {
+                console.log("✅ ArabicReshaper loaded successfully");
+            }
+        }, 500);
+    </script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <script>
+        // Force cache invalidation - load contract.js with timestamp
+        const script = document.createElement('script');
+        script.src = 'contract.js?t=' + Date.now();
+        document.body.appendChild(script);
+    </script>
+</body>
+
+</html>

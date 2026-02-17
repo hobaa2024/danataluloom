@@ -1,0 +1,1774 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="منصة إدارة العقود المدرسية - نظام متكامل لإرسال وتوقيع العقود الدراسية">
+    <title>مدارس دانة العلوم - منصة العقود الذكية</title>
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Compact Table Styles */
+        .table-container {
+            overflow-x: auto;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .data-table td {
+            white-space: nowrap;
+            font-size: 0.85rem !important;
+            padding: 0.6rem !important;
+            vertical-align: middle;
+            min-width: 110px;
+        }
+
+        .data-table th {
+            white-space: nowrap;
+            font-size: 0.85rem;
+            padding: 0.6rem !important;
+        }
+
+        /* Action Dropdown Components */
+        .action-group {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            justify-content: flex-end;
+            position: relative;
+        }
+
+        .action-btn-main {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .action-btn-main.send {
+            background: #dcfce7;
+            color: #166534;
+            border-color: #bbf7d0;
+        }
+
+        .action-btn-main.remind {
+            background: #fef3c7;
+            color: #92400e;
+            border-color: #fde68a;
+        }
+
+        .action-btn-main.verify {
+            background: #e0e7ff;
+            color: #3730a3;
+            border-color: #c7d2fe;
+        }
+
+        .action-btn-main:hover {
+            filter: brightness(0.95);
+        }
+
+        .action-dropdown-toggle {
+            padding: 4px;
+            background: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            color: #64748b;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 28px;
+            width: 20px;
+        }
+
+        .action-dropdown-toggle:hover {
+            background: #e2e8f0;
+            color: #334155;
+        }
+
+        .action-dropdown-menu {
+            position: fixed;
+            background: white !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+            width: 210px;
+            /* Safer width for long Arabic text */
+            z-index: 9999999;
+            display: none;
+            flex-direction: column;
+            padding: 4px;
+            text-align: right;
+            direction: rtl;
+            transform: none !important;
+            transition: none !important;
+        }
+
+        .action-dropdown-menu.active {
+            display: flex;
+        }
+
+        .action-dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            font-size: 0.95rem;
+            /* Larger font */
+            font-weight: 700;
+            /* Extra bold */
+            color: #1e293b;
+            /* Darker color for clarity */
+            background: none;
+            border: none;
+            width: 100%;
+            text-align: right;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: none !important;
+        }
+
+        .action-dropdown-item:hover {
+            background: #f1f5f9;
+            color: #0f172a;
+        }
+
+        .action-dropdown-item.delete {
+            color: #ef4444;
+            border-top: 1px solid #f1f5f9;
+            margin-top: 5px;
+        }
+
+        .action-dropdown-item.delete:hover {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+    </style>
+
+    <!-- Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.21/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
+    <script>
+        if (typeof PDFLib === 'undefined') {
+            console.warn("PDFLib failed, trying cdnjs...");
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"><\/script>');
+        }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="font-data.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js"></script>
+    <script>
+        if (typeof ArabicReshaper === 'undefined') {
+            document.write('<script src="https://unpkg.com/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js"><\/script>');
+        }
+    </script>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="firebase-config.js"></script>
+</head>
+
+<body class="admin-body">
+    <!-- Admin Login Screen -->
+    <div id="loginOverlay"
+        style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 10000; display: flex; align-items: center; justify-content: center;">
+        <div class="card" style="width: 400px; padding: 2.5rem; text-align: center;">
+            <div class="logo-container" style="margin-bottom: 2rem;">
+                <img id="loginLogo" src="assets/logo.png" alt="Logo"
+                    style="max-height: 80px; width: auto; max-width: 100%;">
+                <h2 style="margin-top: 1rem; color: var(--primary-solid);">نظام العقود المدرسية</h2>
+            </div>
+            <div class="form-group" style="text-align: right; margin-bottom: 1rem;">
+                <label for="adminUserInput">اسم المستخدم</label>
+                <input type="text" id="adminUserInput" placeholder="أدخل اسم المستخدم"
+                    style="width: 100%; padding: 0.8rem; border-radius: 8px; border: 1px solid #ddd;">
+            </div>
+            <div class="form-group" style="text-align: right;">
+                <label for="adminPassInput">كلمة المرور</label>
+                <input type="password" id="adminPassInput" placeholder="أدخل كلمة المرور"
+                    style="width: 100%; padding: 0.8rem; border-radius: 8px; border: 1px solid #ddd;">
+            </div>
+            <button class="btn btn-primary" onclick="UI.handleLogin()"
+                style="width: 100%; margin-top: 1.5rem;">الدخول</button>
+            <p id="loginError" style="color: #ef4444; margin-top: 1rem; display: none; font-size: 0.9rem;">بيانات الدخول
+                غير صحيحة</p>
+        </div>
+    </div>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-content">
+                <div class="logo">
+                    <img id="navLogo" src="assets/logo.png" alt="شعار مدارس دانة العلوم"
+                        style="height: 60px; width: auto; max-width: 200px; object-fit: contain;">
+                    <h1 style="display: none;">مدارس دانة العلوم</h1>
+                </div>
+                <div class="nav-links">
+                    <a href="#" class="nav-link active" data-page="dashboard">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="14" width="7" height="7"></rect>
+                            <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg>
+                        الرئيسية
+                    </a>
+                    <a href="#" class="nav-link" data-page="students">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg>
+                        الطلاب
+                    </a>
+                    <a href="#" class="nav-link" data-page="contracts">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                            <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                        العقود
+                    </a>
+                    <a href="#" class="nav-link" data-page="settings">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path
+                                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                            </path>
+                        </svg>
+                        الإعدادات
+                    </a>
+                    <button id="themeToggle" class="btn-theme" title="تبديل الوضع الليلي">
+                        <svg class="sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="5"></circle>
+                            <line x1="12" y1="1" x2="12" y2="3"></line>
+                            <line x1="12" y1="21" x2="12" y2="23"></line>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                            <line x1="1" y1="12" x2="3" y2="12"></line>
+                            <line x1="21" y1="12" x2="23" y2="12"></line>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                        </svg>
+                        <svg class="moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" style="display:none;">
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                        </svg>
+                    </button>
+                    <div id="cloudStatus"
+                        style="font-size: 0.75rem; display: flex; align-items: center; gap: 5px; color: #718096;"
+                        title="حالة المزامنة السحابية">
+                        <span id="cloudStatusDot"
+                            style="width: 8px; height: 8px; background: #cbd5e0; border-radius: 50%;"></span>
+                        <span id="cloudStatusText">جاري الاتصال...</span>
+                    </div>
+                    <a href="#" class="nav-link" onclick="UI.handleLogout()" style="color: #ef4444;">خروج</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Localhost Warning -->
+    <div id="localhostWarning" class="localhost-warning" style="display: none;">
+        <div class="container">
+            <div class="warning-content">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path
+                        d="M12 9V13M12 17H12.01M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                </svg>
+                <div>
+                    <strong>⚠️ تحذير: الروابط لن تعمل على الهواتف!</strong>
+                    <p>شغّل ملف <code>start-server.bat</code> واستخدم <strong>http://localhost:8000</strong></p>
+                </div>
+                <button class="btn btn-secondary btn-small"
+                    onclick="document.getElementById('localhostWarning').style.display='none'">فهمت</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container">
+            <!-- Contracts Management Page -->
+            <div id="contracts-page" class="page">
+                <!-- Modern Page Header with Gradient -->
+                <div class="page-header"
+                    style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%); padding: 2rem; border-radius: 16px; margin-bottom: 2rem; border: 1px solid rgba(102, 126, 234, 0.1);">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                        <div>
+                            <h2
+                                style="font-size: 2.2rem; font-weight: 900; background: var(--primary); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem;">
+                                📝 إدارة العقود الذكية</h2>
+                            <p style="color: var(--text-muted); font-size: 1.05rem;">مركز شامل لإدارة قوالب العقود
+                                والعقود الموقعة</p>
+                        </div>
+                        <div style="display: flex; gap: 1rem; align-items: center;">
+                            <button class="btn btn-secondary" onclick="ContractUI.downloadSelectedContracts()"
+                                style="box-shadow: var(--shadow);">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                تحميل المحدد
+                            </button>
+                            <button class="btn btn-primary" id="newContractBtn"
+                                style="box-shadow: var(--shadow-lg); animation: pulse 2s ease-in-out infinite;">
+                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                    <path d="M10 4V16M4 10H16" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" />
+                                </svg>
+                                إضافة نموذج جديد
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Stats Cards -->
+                <div
+                    style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+                    <div class="stat-mini-card" onclick="ContractUI.filterByStatus('all')" style="cursor: pointer;">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <div
+                                style="width: 50px; height: 50px; border-radius: 12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white"
+                                    stroke-width="2">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                </svg>
+                            </div>
+                            <div>
+                                <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">جميع العقود</p>
+                                <p style="font-size: 1.8rem; font-weight: 800; color: var(--text-dark); margin: 0;"
+                                    id="allContractsCount">0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="stat-mini-card" onclick="ContractUI.filterByStatus('signed')" style="cursor: pointer;">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <div
+                                style="width: 50px; height: 50px; border-radius: 12px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white"
+                                    stroke-width="2">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                            </div>
+                            <div>
+                                <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">عقود موقعة</p>
+                                <p style="font-size: 1.8rem; font-weight: 800; color: #10b981; margin: 0;"
+                                    id="signedContractsCount">0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="stat-mini-card" onclick="ContractUI.filterByStatus('pending')" style="cursor: pointer;">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <div
+                                style="width: 50px; height: 50px; border-radius: 12px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white"
+                                    stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                </svg>
+                            </div>
+                            <div>
+                                <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">قيد الانتظار</p>
+                                <p style="font-size: 1.8rem; font-weight: 800; color: #f59e0b; margin: 0;"
+                                    id="pendingContractsCount">0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="stat-mini-card" onclick="ContractUI.showTemplates()" style="cursor: pointer;">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <div
+                                style="width: 50px; height: 50px; border-radius: 12px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white"
+                                    stroke-width="2">
+                                    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                                    <polyline points="13 2 13 9 20 9"></polyline>
+                                </svg>
+                            </div>
+                            <div>
+                                <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">قوالب العقود</p>
+                                <p style="font-size: 1.8rem; font-weight: 800; color: #3b82f6; margin: 0;"
+                                    id="templatesCount">0</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabs Navigation -->
+                <div class="contracts-tabs"
+                    style="display: flex; gap: 1rem; border-bottom: 2px solid var(--border); margin-bottom: 2rem; overflow-x: auto;">
+                    <button class="contract-tab active" data-tab="signed" onclick="ContractUI.switchTab('signed')"
+                        style="padding: 1rem 1.5rem; background: none; border: none; border-bottom: 3px solid var(--primary-solid); color: var(--primary-solid); font-weight: 700; cursor: pointer; transition: all 0.3s; white-space: nowrap;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2"
+                            style="display: inline-block; margin-left: 0.5rem; vertical-align: middle;">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        العقود الموقعة
+                    </button>
+                    <button class="contract-tab" data-tab="templates" onclick="ContractUI.switchTab('templates')"
+                        style="padding: 1rem 1.5rem; background: none; border: none; border-bottom: 3px solid transparent; color: var(--text-muted); font-weight: 600; cursor: pointer; transition: all 0.3s; white-space: nowrap;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2"
+                            style="display: inline-block; margin-left: 0.5rem; vertical-align: middle;">
+                            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                            <polyline points="13 2 13 9 20 9"></polyline>
+                        </svg>
+                        نماذج العقود
+                    </button>
+                </div>
+
+                <!-- Tab Content: Signed Contracts -->
+                <div class="tab-content active" id="signedTab">
+                    <div class="card" style="border-radius: 16px; overflow: hidden; box-shadow: var(--shadow-lg);">
+                        <div class="card-header"
+                            style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); padding: 1.5rem; border-bottom: 2px solid var(--border);">
+                            <div
+                                style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                                <div>
+                                    <h3
+                                        style="font-size: 1.4rem; font-weight: 800; color: var(--text-dark); margin: 0;">
+                                        📋 سجل العقود الموقعة</h3>
+                                    <p style="font-size: 0.9rem; color: var(--text-muted); margin: 0.3rem 0 0 0;">جميع
+                                        العقود التي تم توقيعها من قبل أولياء الأمور</p>
+                                </div>
+                                <div style="display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap;">
+                                    <div style="position: relative;">
+                                        <input type="text" id="signedContractSearch" placeholder="🔍 بحث باسم الطالب..."
+                                            style="padding: 0.7rem 1rem 0.7rem 2.5rem; border: 2px solid var(--border); border-radius: 10px; width: 280px; font-size: 0.95rem; transition: all 0.3s;"
+                                            onfocus="this.style.borderColor='var(--primary-solid)'"
+                                            onblur="this.style.borderColor='var(--border)'">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8"
+                                            stroke-width="2"
+                                            style="position: absolute; right: 0.8rem; top: 50%; transform: translateY(-50%);">
+                                            <circle cx="11" cy="11" r="8"></circle>
+                                            <path d="M21 21l-4.35-4.35"></path>
+                                        </svg>
+                                    </div>
+                                    <select id="filterSignedStatus"
+                                        style="padding: 0.7rem 1rem; border: 2px solid var(--border); border-radius: 10px; font-size: 0.95rem; cursor: pointer;"
+                                        onchange="ContractUI.applyFilter(this.value)">
+                                        <option value="all">جميع الحالات</option>
+                                        <option value="signed">موقعة فقط</option>
+                                        <option value="verified">موثقة فقط</option>
+                                    </select>
+                                    <button id="downloadSelectedBtn" onclick="ContractUI.downloadSelectedContracts()"
+                                        style="padding: 0.7rem 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                            <polyline points="7 10 12 15 17 10"></polyline>
+                                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                                        </svg>
+                                        تحميل المحدد
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="table-container">
+                            <table class="data-table" id="signedContractsTable" style="font-size: 0.95rem;">
+                                <thead>
+                                    <tr style="background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);">
+                                        <th style="width: 50px; text-align: center;"><input type="checkbox"
+                                                id="selectAllContracts"
+                                                style="cursor: pointer; width: 18px; height: 18px;"></th>
+                                        <th style="font-weight: 800; color: var(--text-dark);">اسم الطالب</th>
+                                        <th style="font-weight: 800; color: var(--text-dark);">ولي الأمر</th>
+                                        <th style="font-weight: 800; color: var(--text-dark);">تاريخ التوقيع</th>
+                                        <th style="font-weight: 800; color: var(--text-dark);">حالة العقد</th>
+                                        <th style="font-weight: 800; color: var(--text-dark); text-align: center;">
+                                            الإجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="signedContractsTableBody">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab Content: Contract Templates -->
+                <div class="tab-content" id="templatesTab" style="display: none;">
+                    <div style="margin-bottom: 2rem;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                            <div>
+                                <h3
+                                    style="font-size: 1.5rem; font-weight: 800; color: var(--text-dark); margin-bottom: 0.3rem;">
+                                    📄 نماذج العقود المحفوظة</h3>
+                                <p style="color: var(--text-muted); font-size: 0.95rem;">قوالب جاهزة للاستخدام مع
+                                    إمكانية التخصيص</p>
+                            </div>
+                            <button class="btn btn-primary" onclick="ContractUI.openModal()"
+                                style="box-shadow: var(--shadow-md);">
+                                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                    <path d="M10 4V16M4 10H16" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" />
+                                </svg>
+                                إضافة نموذج جديد
+                            </button>
+                        </div>
+                    </div>
+                    <div class="contracts-grid" id="contractsGrid"
+                        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem;">
+                        <!-- Templates populated here by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard Page -->
+            <div id="dashboard-page" class="page active">
+                <div class="page-header"
+                    style="background: var(--primary-gradient); padding: 3rem; border-radius: var(--radius-lg); color: white; margin-bottom: 2.5rem; position: relative; overflow: hidden; box-shadow: var(--shadow-premium);">
+                    <div
+                        style="position: absolute; top: -50px; left: -50px; width: 200px; height: 200px; background: rgba(255,255,255,0.1); border-radius: 50%;">
+                    </div>
+                    <div
+                        style="position: absolute; bottom: -30px; right: 10%; width: 150px; height: 150px; background: rgba(255,255,255,0.05); border-radius: 50%;">
+                    </div>
+                    <div style="position: relative; z-index: 1;">
+                        <h2 style="font-size: 2.5rem; margin-bottom: 0.5rem; font-weight: 900; letter-spacing: -1px;">
+                            مرحباً بك في لوحة التحكم 👋</h2>
+                        <p style="font-size: 1.1rem; opacity: 0.9; max-width: 600px;">نظام مدارس دانة العلوم المتطور
+                            لإدارة العقود المدرسية بطريقة ذكية وسريعة.</p>
+                    </div>
+                </div>
+
+                <!-- Stats Cards -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: rgba(99, 102, 241, 0.1); color: #6366f1;">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path
+                                    d="M17 21V19C17 17.9391 16.5786 16.9217 15.8284 16.1716C15.0783 15.4214 14.0609 15 13 15H5C3.93913 15 2.92172 15.4214 2.17157 16.1716C1.42143 16.9217 1 17.9391 1 19V21M23 21V19C23 17.9391 22.5786 16.9217 21.8284 16.1716C21.0783 15.4214 20.0609 15 19 15H18M13 7C13 9.20914 11.2091 11 9 11C6.79086 11 5 9.20914 5 7C5 4.79086 6.79086 3 9 3C11.2091 3 13 4.79086 13 7Z"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <h3>إجمالي الطلاب</h3>
+                            <p class="stat-number" id="totalStudents">0</p>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path
+                                    d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <h3>العقود الموقعة</h3>
+                            <p class="stat-number" id="signedContracts">0</p>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b;">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path
+                                    d="M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <h3>قيد الانتظار</h3>
+                            <p class="stat-number" id="pendingContracts">0</p>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6;">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path
+                                    d="M3 8L10.89 13.26C11.2187 13.4793 11.6049 13.5963 12 13.5963C12.3951 13.5963 12.7813 13.4793 13.11 13.26L21 8M5 19H19C19.5304 19 20.0391 18.7893 20.4142 18.4142C20.7893 18.0391 21 17.5304 21 17V7C21 6.46957 20.7893 5.96086 20.4142 5.58579C20.0391 5.21071 19.5304 5 19 5H5C4.46957 5 3.96086 5.21071 3.58579 5.58579C3.21071 5.96086 3 6.46957 3 7V17C3 17.5304 3.21071 18.0391 3.58579 18.4142C3.96086 18.7893 4.46957 19 5 19Z"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <h3>العقود المرسلة</h3>
+                            <p class="stat-number" id="sentContracts">0</p>
+                        </div>
+                    </div>
+                </div>
+
+
+
+                <!-- Analysis Charts -->
+                <div class="grid-2-1"
+                    style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+                    <div class="card p-4">
+                        <div class="card-header" style="border:none; padding-bottom: 0;">
+                            <h3>مؤشرات الإنجاز</h3>
+                        </div>
+                        <div style="height: 300px; padding: 1rem;">
+                            <canvas id="statsChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="card p-4">
+                        <div class="card-header" style="border:none; padding-bottom: 0;">
+                            <h3>حالات العقود</h3>
+                        </div>
+                        <div style="height: 300px; padding: 1rem;">
+                            <canvas id="distributionChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Students Table -->
+                <div class="card" style="box-shadow: var(--shadow-premium);">
+                    <div class="card-header"
+                        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--border-color); padding: 2rem;">
+                        <div>
+                            <h3 style="font-size: 1.5rem; font-weight: 800; color: #f59e0b; margin-bottom: 0.25rem;">
+                                إجراءات مطلوبة: عقود بانتظار التوقيع</h3>
+                            <p style="font-size: 0.9rem; color: var(--text-muted);">قائمة الطلاب الذين لم يوقعوا العقد
+                                بعد (الأولوية)</p>
+                        </div>
+                        <div style="display: flex; gap: 12px; align-items: center;">
+                            <div style="position: relative;">
+                                <input type="text" id="studentSearch" placeholder="بحث بالاسم..."
+                                    style="padding: 0.75rem 1rem 0.75rem 2.5rem; border: 2px solid var(--border-color); border-radius: var(--radius-md); width: 300px; font-size: 0.95rem; background: var(--bg-soft); transition: var(--transition-base);">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)"
+                                    stroke-width="2"
+                                    style="position: absolute; right: 0.8rem; top: 50%; transform: translateY(-50%);">
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <path d="M21 21l-4.35-4.35"></path>
+                                </svg>
+                            </div>
+                            <button id="deleteSelectedBtn" class="btn btn-danger" style="display: none;"
+                                onclick="UI.deleteSelectedStudents()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path
+                                        d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2">
+                                    </path>
+                                </svg>
+                                حذف (<span id="selectedCount">0</span>)
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="studentsTable">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"><input type="checkbox" id="selectAllDashboard"></th>
+                                    <th onclick="UI.sortStudents('studentName')" style="cursor: pointer;">
+                                        <div style="display:flex; align-items:center; gap:5px;">
+                                            اسم الطالب
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="#3b82f6"
+                                                stroke="#3b82f6" stroke-width="2">
+                                                <path d="M7 15l5 5 5-5" />
+                                                <path d="M7 9l5-5 5 5" />
+                                            </svg>
+                                        </div>
+                                    </th>
+                                    <th>
+                                        <div style="display:flex; align-items:center; gap:5px;">
+                                            المسار
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="#3b82f6"
+                                                stroke="#3b82f6" stroke-width="2">
+                                                <path d="M7 15l5 5 5-5" />
+                                                <path d="M7 9l5-5 5 5" />
+                                            </svg>
+                                        </div>
+                                    </th>
+                                    <th onclick="UI.sortStudents('studentLevel')" style="cursor: pointer;">
+                                        <div style="display:flex; align-items:center; gap:5px;">
+                                            المرحلة الدراسية
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="#3b82f6"
+                                                stroke="#3b82f6" stroke-width="2">
+                                                <path d="M7 15l5 5 5-5" />
+                                                <path d="M7 9l5-5 5 5" />
+                                            </svg>
+                                        </div>
+                                    </th>
+                                    <th onclick="UI.sortStudents('studentGrade')" style="cursor: pointer;">
+                                        <div style="display:flex; align-items:center; gap:5px;">
+                                            الصف
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="#3b82f6"
+                                                stroke="#3b82f6" stroke-width="2">
+                                                <path d="M7 15l5 5 5-5" />
+                                                <path d="M7 9l5-5 5 5" />
+                                            </svg>
+                                        </div>
+                                    </th>
+                                    <th>هوية الطالب</th>
+                                    <th onclick="UI.sortStudents('parentName')" style="cursor: pointer;">
+                                        <div style="display:flex; align-items:center; gap:5px;">
+                                            اسم ولي الأمر
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="#3b82f6"
+                                                stroke="#3b82f6" stroke-width="2">
+                                                <path d="M7 15l5 5 5-5" />
+                                                <path d="M7 9l5-5 5 5" />
+                                            </svg>
+                                        </div>
+                                    </th>
+                                    <th>البريد الإلكتروني</th>
+                                    <th>هوية ولي الأمر</th>
+                                    <th>رقم الواتساب</th>
+                                    <th onclick="UI.sortStudents('contractStatus')" style="cursor: pointer;">
+                                        <div style="display:flex; align-items:center; gap:5px;">
+                                            حالة العقد
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="#3b82f6"
+                                                stroke="#3b82f6" stroke-width="2">
+                                                <path d="M7 15l5 5 5-5" />
+                                                <path d="M7 9l5-5 5 5" />
+                                            </svg>
+                                        </div>
+                                    </th>
+                                    <th>الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="studentsTableBody">
+                                <!-- Data will be populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <!-- Students Page -->
+            <div id="students-page" class="page">
+                <div class="page-header"
+                    style="background: var(--bg-card); padding: 2.5rem; border-radius: var(--radius-lg); margin-bottom: 2.5rem; border: 1px solid var(--border-color); box-shadow: var(--shadow-md); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.5rem;">
+                    <div>
+                        <h2
+                            style="font-size: 2rem; font-weight: 800; color: var(--text-primary); margin-bottom: 0.25rem;">
+                            إدارة الطلاب الكلية</h2>
+                        <p style="color: var(--text-muted); font-size: 1rem;">قاعدة بيانات شاملة لجميع الطلاب المسجلين
+                            وعقودهم.</p>
+                    </div>
+                    <div style="display: flex; gap: 1rem;">
+                        <button class="btn btn-secondary" onclick="UI.openImportModal()" style="height: 48px;">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            استيراد (Excel)
+                        </button>
+                        <button class="btn btn-primary" onclick="UI.openModal()" style="height: 48px;">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M12 5v14M5 12h14"></path>
+                            </svg>
+                            إضافة طالب جديد
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card" style="box-shadow: var(--shadow-premium);">
+                    <div class="card-header" style="padding: 2rem; border-bottom: 2px solid var(--border-color);">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.5rem;">
+                            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; flex: 1;">
+                                <div style="position: relative; flex: 1; min-width: 250px;">
+                                    <input type="text" id="studentSearchAll"
+                                        placeholder="بحث بالاسم، البريد، أو الهاتف..."
+                                        style="width: 100%; padding: 0.75rem 1rem 0.75rem 2.5rem; border: 2px solid var(--border-color); border-radius: var(--radius-md); font-size: 0.95rem; background: var(--bg-soft);"
+                                        oninput="UI.applyFilters()">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                        stroke="var(--text-muted)" stroke-width="2"
+                                        style="position: absolute; right: 0.85rem; top: 50%; transform: translateY(-50%);">
+                                        <circle cx="11" cy="11" r="8"></circle>
+                                        <path d="M21 21l-4.35-4.35"></path>
+                                    </svg>
+                                </div>
+                                <select id="filterLevel"
+                                    style="padding: 0.75rem 1rem; border: 2px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-soft); cursor: pointer;"
+                                    onchange="UI.applyFilters()">
+                                    <option value="">جميع المراحل</option>
+                                </select>
+                                <select id="filterGrade"
+                                    style="padding: 0.75rem 1rem; border: 2px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-soft); cursor: pointer;"
+                                    onchange="UI.applyFilters()">
+                                    <option value="">جميع الصفوف</option>
+                                </select>
+                            </div>
+
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <div id="filteredCountInfo"
+                                    style="font-size: 0.95rem; font-weight: 700; color: var(--text-secondary); background: var(--bg-soft); padding: 0.5rem 1rem; border-radius: var(--radius-full);">
+                                    <span id="filteredCount">0</span> طلاب
+                                </div>
+                                <button class="btn btn-secondary" onclick="UI.exportToExcel()"
+                                    style="padding: 0.6rem 1rem;">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="7 10 12 15 17 10"></polyline>
+                                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                                    </svg>
+                                    تصدير
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Bulk Actions Bar -->
+                        <div id="bulkActions"
+                            style="display: none; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px dashed var(--border-color); align-items: center; gap: 12px; animation: fadeInUp 0.3s ease;">
+                            <span
+                                style="font-size: 0.9rem; font-weight: 700; color: var(--primary-main); margin-left: 10px;">الإجراءات
+                                المجمعة:</span>
+                            <button class="btn btn-secondary" onclick="UI.startBulkAction('send')"
+                                style="font-size: 0.85rem; padding: 0.5rem 1rem; color: #10b981; border-color: #10b981;">
+                                📢 إرسال عقود
+                            </button>
+                            <button class="btn btn-secondary" onclick="UI.startBulkAction('remind')"
+                                style="font-size: 0.85rem; padding: 0.5rem 1rem; color: #f59e0b; border-color: #f59e0b;">
+                                🔔 تذكير المحدد
+                            </button>
+                            <!-- Hidden util buttons -->
+                            <button class="btn btn-secondary" onclick="UI.bulkUpdateStatus('sent')"
+                                style="display:none;">DEBUG_SENT</button>
+
+                            <button class="btn btn-secondary" onclick="UI.bulkUpdateStatus('verified')"
+                                style="font-size: 0.85rem; padding: 0.5rem 1rem;">توثيق المحدد</button>
+                            <button id="deleteSelectedBtnMain" class="btn btn-danger"
+                                style="font-size: 0.85rem; padding: 0.5rem 1rem;" onclick="UI.deleteSelectedStudents()">
+                                حذف المحدد (<span id="selectedCountMain">0</span>)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Bulk Action Queue Modal -->
+                    <div id="bulkQueueModal" class="modal" style="z-index: 10000;">
+                        <div class="modal-content" style="max-width: 500px; text-align: center;">
+                            <div class="modal-header">
+                                <h3 id="bulkQueueTitle">جاري الإرسال الجماعي...</h3>
+                                <button class="close-btn" onclick="UI.closeBulkModal()">&times;</button>
+                            </div>
+                            <div style="padding: 2rem;">
+                                <div style="margin-bottom: 1.5rem;">
+                                    <span id="bulkQueueProgress"
+                                        style="font-size: 3rem; font-weight: 800; color: var(--primary-main);">1/5</span>
+                                    <p style="color: var(--text-muted); margin-top: 0.5rem;">يرجى عدم إغلاق هذه النافذة
+                                        حتى الانتهاء</p>
+                                </div>
+
+                                <div id="bulkQueueCurrentStudent"
+                                    style="background: var(--bg-soft); padding: 1rem; border-radius: 8px; margin-bottom: 2rem;">
+                                    <p>جاري التحضير لـ: <strong id="bulkStudentName">-</strong></p>
+                                </div>
+
+                                <div id="bulkQueueActions">
+                                    <button id="bulkNextBtn" class="btn btn-primary" onclick="UI.processNextInQueue()"
+                                        style="width: 100%; padding: 1rem; font-size: 1.1rem;">
+                                        🚀 فتح واتساب وإرسال
+                                    </button>
+                                    <p style="font-size: 0.85rem; color: #f59e0b; margin-top: 10px;">
+                                        ⚠️ سيفتح واتساب في نافذة جديدة. بعد الإرسال، عد لهذه الصفحة للاستمرار.
+                                    </p>
+                                </div>
+
+                                <div id="bulkQueueComplete" style="display: none;">
+                                    <div style="color: #10b981; font-size: 4rem; margin-bottom: 1rem;">✅</div>
+                                    <h3>تمت العملية بنجاح!</h3>
+                                    <button class="btn btn-secondary" onclick="UI.closeBulkModal()"
+                                        style="margin-top: 1rem;">إغلاق</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table" id="allStudentsTable">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"><input type="checkbox" id="selectAllAllStudents"></th>
+                                    <th onclick="UI.sortStudents('studentName')" style="cursor: pointer;">
+                                        <div style="display:flex; align-items:center; gap:5px;">
+                                            اسم الطالب
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="#3b82f6"
+                                                stroke="#3b82f6" stroke-width="2">
+                                                <path d="M7 15l5 5 5-5" />
+                                                <path d="M7 9l5-5 5 5" />
+                                            </svg>
+                                        </div>
+                                    </th>
+                                    <th>
+                                        <div style="display:flex; align-items:center; gap:5px;">
+                                            المسار
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="#3b82f6"
+                                                stroke="#3b82f6" stroke-width="2">
+                                                <path d="M7 15l5 5 5-5" />
+                                                <path d="M7 9l5-5 5 5" />
+                                            </svg>
+                                        </div>
+                                    </th>
+                                    <th onclick="UI.sortStudents('studentLevel')" style="cursor: pointer;">
+                                        <div style="display:flex; align-items:center; gap:5px;">
+                                            المرحلة الدراسية
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="#3b82f6"
+                                                stroke="#3b82f6" stroke-width="2">
+                                                <path d="M7 15l5 5 5-5" />
+                                                <path d="M7 9l5-5 5 5" />
+                                            </svg>
+                                        </div>
+                                    </th>
+                                    <th onclick="UI.sortStudents('studentGrade')" style="cursor: pointer;">
+                                        <div style="display:flex; align-items:center; gap:5px;">
+                                            الصف
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="#3b82f6"
+                                                stroke="#3b82f6" stroke-width="2">
+                                                <path d="M7 15l5 5 5-5" />
+                                                <path d="M7 9l5-5 5 5" />
+                                            </svg>
+                                        </div>
+                                    </th>
+                                    <th>هوية الطالب</th>
+                                    <th onclick="UI.sortStudents('parentName')" style="cursor: pointer;">
+                                        <div style="display:flex; align-items:center; gap:5px;">
+                                            اسم ولي الأمر
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="#3b82f6"
+                                                stroke="#3b82f6" stroke-width="2">
+                                                <path d="M7 15l5 5 5-5" />
+                                                <path d="M7 9l5-5 5 5" />
+                                            </svg>
+                                        </div>
+                                    </th>
+                                    <th>البريد الإلكتروني</th>
+                                    <th>هوية ولي الأمر</th>
+                                    <th>رقم الواتساب</th>
+                                    <th onclick="UI.sortStudents('contractStatus')" style="cursor: pointer;">
+                                        <div style="display:flex; align-items:center; gap:5px;">
+                                            حالة العقد
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="#3b82f6"
+                                                stroke="#3b82f6" stroke-width="2">
+                                                <path d="M7 15l5 5 5-5" />
+                                                <path d="M7 9l5-5 5 5" />
+                                            </svg>
+                                        </div>
+                                    </th>
+                                    <th>الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="allStudentsTableBody">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+
+
+            <!-- Settings Page -->
+            <div id="settings-page" class="page">
+                <div class="page-header"
+                    style="background: var(--bg-card); padding: 2rem; border-radius: var(--radius-lg); margin-bottom: 2rem; border: 1px solid var(--border-color); box-shadow: var(--shadow-md);">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <h2
+                                style="font-size: 2rem; font-weight: 800; color: var(--text-primary); margin-bottom: 0.5rem;">
+                                لوحة التحكم والإعدادات</h2>
+                            <p style="color: var(--text-muted); font-size: 1rem;">التحكم الكامل في هوية المدرسة، الهيكلة
+                                الأكاديمية، والأمان.</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="UI.saveSettings()">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                                <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                                <polyline points="7 3 7 8 15 8"></polyline>
+                            </svg>
+                            حفظ كافة التغييرات
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Settings Tabs -->
+                <div class="settings-tabs">
+                    <button class="tab-btn active" onclick="UI.switchSettingsTab('general')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                        </svg>
+                        الهوية العامة
+                    </button>
+                    <button class="tab-btn" onclick="UI.switchSettingsTab('academic')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                        </svg>
+                        الهيكلة الأكاديمية
+                    </button>
+                    <button class="tab-btn" onclick="UI.switchSettingsTab('security')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                        الأمان والحساب
+                    </button>
+                    <button class="tab-btn" onclick="UI.switchSettingsTab('system')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                        </svg>
+                        النظام والنسخ الاحتياطي
+                    </button>
+                </div>
+
+                <!-- Tab 1: General Settings -->
+                <div id="tab-general" class="tab-content active">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 2rem;">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 style="font-weight:700;">بيانات المدرسة الأساسية</h3>
+                            </div>
+                            <div class="card-body" style="padding: 2rem;">
+                                <div class="form-group">
+                                    <label>اسم المدرسة</label>
+                                    <input type="text" id="schoolName" placeholder="أدخل اسم المدرسة الرسمي">
+                                </div>
+                                <div class="form-group">
+                                    <label>رقم الواتساب الرسمي</label>
+                                    <input type="text" id="schoolPhone" placeholder="9665xxxxxxxx">
+                                    <small style="color:var(--text-muted)">يستخدم لإرسال روابط العقود لأولياء
+                                        الأمور</small>
+                                </div>
+                                <div class="form-group">
+                                    <label>رابط السيرفر (Server Link)</label>
+                                    <input type="text" id="serverAddress" placeholder="http://YOUR-IP:PORT">
+                                    <small style="color:var(--text-muted)">الرابط الذي سيتم فتحه عند ضغط ولي الأمر على
+                                        العقد</small>
+                                </div>
+                            </div>
+                        </div>
+
+
+
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 style="font-weight:700;">الختم والشعار</h3>
+                            </div>
+                            <div class="card-body" style="padding: 2rem;">
+                                <div class="form-group">
+                                    <label>نص الختم الدائري</label>
+                                    <input type="text" id="schoolStampInput" oninput="UI.updateStampPreview()"
+                                        placeholder="مثال: إدارة القبول والتسجيل">
+                                </div>
+                                <div class="form-group">
+                                    <label>صورة الختم (تظهر بدلاً من النص)</label>
+                                    <input type="file" onchange="UI.handleStampUpload(this)" accept="image/*">
+                                    <small style="color:var(--text-muted)">يفضل صورة PNG بخلفية شفافة</small>
+                                    <!-- Stamp Preview -->
+                                    <div style="display: flex; justify-content: center; margin: 2rem 0;">
+                                        <div class="school-stamp"
+                                            style="width: 120px; height: 120px; border: 4px double var(--primary-main); border-radius: 50%; display: flex; align-items: center; justify-content: center; position: relative; color: var(--primary-main); font-weight: 900; transform: rotate(-15deg); background: rgba(99, 102, 241, 0.05);">
+                                            <div
+                                                style="position: absolute; width: 90%; height: 90%; border: 1px solid var(--primary-main); border-radius: 50%;">
+                                            </div>
+                                            <div id="stampPreviewText"
+                                                style="font-size: 1rem; text-align: center; max-width: 80%; line-height: 1.2;">
+                                                الإدارة</div>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>شعار المدرسة (رابط أو ملف)</label>
+                                        <input type="file" onchange="UI.handleLogoUpload(this)" accept="image/*">
+                                        <img id="settingsLogoPreview" src=""
+                                            style="max-height: 60px; margin-top: 10px; display: block;">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Academic Structure -->
+                <div id="tab-academic" class="tab-content">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 2rem;">
+                        <!-- Levels Manager -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 style="font-weight:700;">المراحل الدراسية</h3>
+                                <p style="font-size:0.9rem; color:var(--text-muted)">أضف المراحل المتاحة في مدرستك
+                                    (ابتدائي، متوسط...)</p>
+                            </div>
+                            <div class="card-body" style="padding: 2rem;">
+                                <div class="input-with-btn">
+                                    <input type="text" id="newLevelInput"
+                                        placeholder="أدخل اسم المرحلة (مثال: رياض أطفال)">
+                                    <button class="btn btn-secondary"
+                                        onclick="UI.addChip('schoolLevelsInput', 'newLevelInput')">إضافة</button>
+                                </div>
+                                <div id="levelsChips" class="chips-container"></div>
+                                <textarea id="schoolLevelsInput" style="display:none"></textarea>
+                                <!-- Hidden syncing field -->
+                            </div>
+                        </div>
+
+                        <!-- Grades Manager -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 style="font-weight:700;">الصفوف الدراسية</h3>
+                                <p style="font-size:0.9rem; color:var(--text-muted)">أضف الفصول المتاحة (الصف الأول،
+                                    الثاني...)</p>
+                            </div>
+                            <div class="card-body" style="padding: 2rem;">
+                                <div class="input-with-btn">
+                                    <input type="text" id="newGradeInput" placeholder="أدخل اسم الصف">
+                                    <button class="btn btn-secondary"
+                                        onclick="UI.addChip('schoolGradesInput', 'newGradeInput')">إضافة</button>
+                                </div>
+                                <div id="gradesChips" class="chips-container"></div>
+                                <textarea id="schoolGradesInput" style="display:none"></textarea>
+                                <!-- Hidden syncing field -->
+                            </div>
+                        </div>
+
+                        <!-- Custom Fields Manager -->
+                        <div class="card" style="grid-column: 1 / -1;">
+                            <div class="card-header">
+                                <h3 style="font-weight:700;">بيانات إضافية للطالب (Custom Fields)</h3>
+                                <p style="font-size:0.9rem; color:var(--text-muted)">أضف حقولاً مخصصة تظهر في نموذج
+                                    تسجيل الطالب (مثل: رقم الهوية، تاريخ الميلاد)</p>
+                            </div>
+                            <div class="card-body" style="padding: 2rem;">
+                                <div class="input-with-btn">
+                                    <input type="text" id="newFieldLabel"
+                                        placeholder="اسم الحقل (مثال: رقم السجل المدني)">
+                                    <select id="newFieldType" style="max-width: 150px;">
+                                        <option value="text">نص</option>
+                                        <option value="number">رقم</option>
+                                        <option value="date">تاريخ</option>
+                                    </select>
+                                    <button class="btn btn-secondary" onclick="UI.addCustomField()">إضافة
+                                        حقل</button>
+                                </div>
+                                <div id="customFieldsList"></div>
+                                <textarea id="customFieldsSetting" style="display:none"></textarea>
+                                <!-- Hidden syncing field -->
+                            </div>
+                        </div>
+
+                        <!-- Auto-Assign Contracts Card -->
+                        <div class="card" style="grid-column: 1 / -1;">
+                            <div class="card-header">
+                                <h3 style="font-weight:700;">ربط العقود التلقائي بالمسارات</h3>
+                                <p style="font-size:0.9rem; color:var(--text-muted)">اختر العقود الافتراضية لكل مسار
+                                    ليتم إسنادها تلقائياً عند استيراد الطلاب.</p>
+                            </div>
+                            <div class="card-body"
+                                style="padding: 2rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                                <div class="form-group">
+                                    <label for="nationalContractSetting">العقد الافتراضي للمسار (الأهلي/ثنائي
+                                        اللغة)</label>
+                                    <select id="nationalContractSetting">
+                                        <option value="">-- اختر العقد --</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="diplomaContractSetting">العقد الافتراضي لمسار (الدبلومة)</label>
+                                    <select id="diplomaContractSetting">
+                                        <option value="">-- اختر العقد --</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Security -->
+                <div id="tab-security" class="tab-content">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 2rem;">
+                        <div class="card" style="border-right: 4px solid var(--primary-main);">
+                            <div class="card-header">
+                                <h3 style="font-weight:700;">بيانات دخول المدير</h3>
+                                <p style="font-size:0.85rem; color:var(--text-muted)">المعلومات المستخدمة للدخول للوحة
+                                    التحكم</p>
+                            </div>
+                            <div class="card-body" style="padding: 2rem;">
+                                <div class="form-group">
+                                    <label>اسم المستخدم الجديد</label>
+                                    <input type="text" id="adminUsernameSetting" placeholder="admin">
+                                </div>
+                                <div class="form-group">
+                                    <label>كلمة المرور الجديدة</label>
+                                    <input type="password" id="adminPassSetting" placeholder="********">
+                                    <small style="display:block; margin-top:5px; color:var(--text-muted)">اتركها فارغة
+                                        إذا لا تريد تغييرها</small>
+                                </div>
+                                <button class="btn btn-primary" onclick="UI.saveSettings()" style="width:100%">تحديث
+                                    بيانات الدخول</button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 style="font-weight:700;">إعدادات الأمان الإضافية</h3>
+                            </div>
+                            <div class="card-body" style="padding: 2rem;">
+                                <div class="form-group">
+                                    <label>الجلسة النشطة</label>
+                                    <p style="font-size: 0.9rem; color: var(--text-muted);">أنت حالياً متصل كمدير
+                                        للنظام.</p>
+                                </div>
+                                <button class="btn btn-secondary" onclick="UI.logout()" style="width:100%">تسجيل
+                                    الخروج</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 4: System (Keep existing) -->
+                <div id="tab-system" class="tab-content">
+                    <!-- Cloud Settings (Existing) -->
+                    <div class="card" style="box-shadow: var(--shadow-md);">
+                        <div class="card-header"
+                            style="padding: 1.5rem; border-bottom: 1px solid var(--border-color); background: rgba(16, 185, 129, 0.03);">
+                            <h3 style="display: flex; align-items: center; gap: 10px;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--success-main)"
+                                    stroke-width="2">
+                                    <path
+                                        d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z">
+                                    </path>
+                                </svg>
+                                المزامنة السحابية (Firebase)
+                            </h3>
+                        </div>
+                        <div class="card-body" style="padding: 2rem;">
+                            <div id="cloudStatusSettings" class="status-badge status-pending"
+                                style="margin-bottom: 1.5rem;">
+                                جاري التحقق...</div>
+                            <div style="display: grid; gap: 1rem; grid-template-columns: 1fr 1fr;">
+                                <button class="btn btn-primary" onclick="CloudDB.syncAllLocalToCloud()">رفع البيانات
+                                    للسحابة</button>
+                                <button class="btn btn-secondary" onclick="CloudDB.syncCloudToLocal()">تحميل من
+                                    السحابة</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Data Backup & Restore -->
+                    <div class="card" style="margin-top: 2rem; box-shadow: var(--shadow-md);">
+                        <div class="card-header" style="padding: 1.5rem; border-bottom: 1px solid var(--border-color);">
+                            <h3
+                                style="display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--text-primary);">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                النسخ الاحتياطي والاستعادة
+                            </h3>
+                            <p style="font-size: 0.9rem; color: var(--text-muted); margin-top: 5px;">
+                                إدارة بيانات النظام وحمايتها من الضياع.
+                            </p>
+                        </div>
+                        <div class="card-body" style="padding: 2rem;">
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; flex-wrap: wrap;">
+                                <!-- Excel Export -->
+                                <div
+                                    style="border: 1px solid var(--border-color); padding: 1.5rem; border-radius: 8px;">
+                                    <h4 style="margin-top:0; color: #10b981;">📊 تقارير إكسل (Excel)</h4>
+                                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+                                        لأغراض الطباعة والمراجعة فقط. قد لا تحتوي على التواقيع.
+                                    </p>
+                                    <button class="btn btn-secondary" onclick="UI.backupAllData()"
+                                        style="width: 100%; justify-content: center;">
+                                        تحميل ملف إكسل
+                                    </button>
+                                </div>
+
+                                <!-- System Snapshot -->
+                                <div
+                                    style="border: 1px solid var(--primary-main); background: rgba(99, 102, 241, 0.02); padding: 1.5rem; border-radius: 8px;">
+                                    <h4 style="margin-top:0; color: var(--primary-main);">💾 لقطة كاملة للنظام
+                                        (JSON)
+                                    </h4>
+                                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+                                        للنسخ الاحتياطي الحقيقي. يحفظ التواقيع، الصور، وكل شيء بدقة 100%.
+                                    </p>
+                                    <div style="display: flex; gap: 10px;">
+                                        <button class="btn btn-primary" onclick="UI.exportSystemJSON()"
+                                            style="flex: 1; justify-content: center;">
+                                            حفظ نسخة كاملة
+                                        </button>
+                                        <button class="btn btn-warning"
+                                            onclick="document.getElementById('jsonrestoreInput').click()"
+                                            style="flex: 1; justify-content: center; background: #f59e0b; border-color: #f59e0b; color: white;">
+                                            استعادة
+                                        </button>
+                                    </div>
+                                    <input type="file" id="jsonrestoreInput" accept=".json" hidden
+                                        onchange="UI.importSystemJSON(this)">
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- Danger Zone (Existing) -->
+                    <div class="card"
+                        style="margin-top: 2rem; border: 2px solid var(--danger-main); background: rgba(239, 68, 68, 0.02);">
+                        <div class="card-header" style="background: rgba(239, 68, 68, 0.05); padding: 1.5rem;">
+                            <h3 style="color: var(--danger-main);">منطقة الخطر</h3>
+                        </div>
+                        <div class="card-body"
+                            style="padding: 2rem; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <p style="font-weight: 700;">حذف جميع البيانات المحلية</p>
+                                <p style="font-size: 0.9rem; color: var(--text-muted);">سيتم مسح كافة البيانات من
+                                    هذا
+                                    <button class="btn btn-danger" onclick="UI.wipeAllData()">مسح كافة البيانات (محلي + سحابي)</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- New Student Modal -->
+    <div class="modal" id="newStudentModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">تسجيل طالب جديد</h3>
+                <button class="close-btn" id="closeModalBtn">&times;</button>
+            </div>
+            <form id="studentForm" class="form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="studentName">اسم الطالب</label>
+                        <input type="text" id="studentName" required placeholder="أدخل اسم الطالب الكامل">
+                    </div>
+                    <div class="form-group">
+                        <label for="studentTrack">المسار التعليمي</label>
+                        <select id="studentTrack" onchange="UI.autoSelectContract()">
+                            <option value="">اختر المسار</option>
+                            <option value="مسار ثنائي اللغة">مسار ثنائي اللغة</option>
+                            <option value="مسار دبلوما أمريكية">مسار دبلوما أمريكية</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="studentLevel">المرحلة الدراسية</label>
+                        <select id="studentLevel" required>
+                            <option value="">اختر المرحلة</option>
+                            <!-- Populated dynamically -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="studentGrade">الصف الدراسي</label>
+                        <select id="studentGrade" required>
+                            <option value="">اختر الصف</option>
+                            <!-- Populated dynamically -->
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="explicitNationalId">هوية الطالب</label>
+                        <input type="number" id="explicitNationalId" placeholder="أدخل رقم الهوية/الإقامة">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="parentName">اسم ولي الأمر</label>
+                        <input type="text" id="parentName" required placeholder="أدخل اسم ولي الأمر">
+                    </div>
+                    <div class="form-group">
+                        <label for="parentNationalId">هوية ولي الأمر</label>
+                        <input type="number" id="parentNationalId" placeholder="أدخل رقم الهوية">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="parentEmail">البريد الإلكتروني</label>
+                        <input type="email" id="parentEmail" required placeholder="example@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="parentWhatsapp">رقم الواتساب</label>
+                        <input type="tel" id="parentWhatsapp" required placeholder="+966xxxxxxxxx">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="sendMethod">طريقة الإرسال</label>
+                        <select id="sendMethod" required>
+                            <option value="">اختر طريقة الإرسال</option>
+                            <option value="email">البريد الإلكتروني</option>
+                            <option value="whatsapp">الواتساب</option>
+                            <option value="both">كلاهما</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="dynamicCustomFieldsContainer" class="form-row" style="flex-wrap: wrap; gap: 1rem;">
+                    <!-- Dynamic fields will be inserted here -->
+                </div>
+
+                <div class="form-group">
+                    <label for="contractYear">السنة الدراسية</label>
+                    <input type="text" id="contractYear" required placeholder="2024-2025">
+                </div>
+
+                <div class="form-group">
+                    <label for="contractTemplate">نموذج العقد</label>
+                    <select id="contractTemplate" required>
+                        <option value="">اختر نموذج العقد</option>
+                        <!-- Will be populated dynamically -->
+                    </select>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="UI.closeModal()">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                            <path d="M17 8L8 17L3 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" />
+                        </svg>
+                        حفظ وإرسال العقد
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Excel Import Modal -->
+    <div class="modal" id="importModal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3>استيراد الطلاب (ملف Excel)</h3>
+                <button class="close-btn" onclick="UI.closeImportModal()">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <div style="text-align: center; margin-bottom: 25px;">
+                    <p style="color: #64748b; margin-bottom: 15px;">الخطوة الأولى: قم بتحميل النموذج وتعبئته بالبيانات
+                    </p>
+                    <button class="btn btn-secondary" onclick="UI.downloadExcelTemplate()"
+                        style="width: 100%; justify-content: center; background: #f8fafc; border: 1px solid #e2e8f0; color: #1e293b;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" style="margin-left:8px;">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        1. تحميل نموذج ملف الإكسل
+                    </button>
+                    <p style="font-size: 12px; color: #94a3b8; margin-top: 5px;">يحتوي النموذج على الأعمدة المطلوبة
+                        (الاسم، الجوال، إلخ.)</p>
+                </div>
+
+                <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 20px 0;">
+
+                <div style="text-align: center;">
+                    <p style="color: #64748b; margin-bottom: 15px;">الخطوة الثانية: رفع الملف بعد تعبئته</p>
+                    <div class="upload-area" onclick="document.getElementById('excelUpload').click()"
+                        style="cursor: pointer; border: 2px dashed #6366f1; background: #f5f3ff; padding: 30px; border-radius: 12px; transition: all 0.3s;">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2"
+                            style="margin-bottom: 10px;">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p style="color: #4338ca; font-weight: 600;">2. اختر ملف الإكسل من جهازك</p>
+                        <p style="font-size: 12px; color: #6366f1;">يدعم ملفات .xlsx, .xls</p>
+                        <input type="file" id="excelUpload" accept=".xlsx, .xls, .csv" hidden
+                            onchange="UI.importFromExcel(this)">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer"
+                style="padding: 15px; background: #f8fafc; text-align: left; border-radius: 0 0 16px 16px;">
+                <button class="btn btn-secondary" onclick="UI.closeImportModal()">إغلاق</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Notification -->
+    <div class="notification" id="notification">
+        <div class="notification-content">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path
+                    d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span id="notificationText"></span>
+        </div>
+    </div>
+
+
+    <!--Contract Editor Modal -->
+    <div class="modal" id="contractEditorModal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h3 id="contractModalTitle">إنشاء عقد جديد</h3>
+                <button class="close-btn" id="closeContractModalBtn">&times;</button>
+            </div>
+            <form id="contractForm" class="form">
+                <div class="form-group">
+                    <label for="contractTitle">عنوان العقد</label>
+                    <input type="text" id="contractTitle" required placeholder="مثال: عقد تسجيل الطلاب 2024-2025">
+                </div>
+                <div class="form-group">
+                    <label>طريقة إدخال نص العقد</label>
+                    <div class="input-method-tabs">
+                        <button type="button" class="input-tab active" data-method="write"
+                            onclick="ContractUI.switchInputMethod('write')">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                <path d="M14 2L18 6L7 17H3V13L14 2Z" stroke="currentColor" stroke-width="2" />
+                            </svg>
+                            كتابة النص
+                        </button>
+                        <button type="button" class="input-tab" data-method="upload"
+                            onclick="ContractUI.switchInputMethod('upload')">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                                <path d="M10 3V13M10 3L6 7M10 3L14 7" stroke="currentColor" stroke-width="2" />
+                            </svg>
+                            استخراج نص
+                        </button>
+                        <button type="button" class="input-tab" id="pdfTemplateTabBtn" data-method="pdf_template"
+                            onclick="ContractUI.switchInputMethod('pdf_template')">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <line x1="16" y1="13" x2="8" y2="13"></line>
+                                <line x1="16" y1="17" x2="8" y2="17"></line>
+                                <polyline points="10 9 9 9 8 9"></polyline>
+                            </svg>
+                            قالب PDF
+                        </button>
+                    </div>
+                </div>
+                <div class="input-method" id="writeMethod">
+                    <div class="form-group">
+                        <label for="contractText">نص العقد</label>
+                        <div class="variables-helper">
+                            <div class="variables-header">
+                                <strong>المتغيرات الديناميكية:</strong>
+                                <small>اضغط على أي متغير لإضافته للنص</small>
+                            </div>
+                            <div class="variables-tags">
+                                <button type="button" class="var-tag"
+                                    onclick="ContractUI.insertVariable('{اسم_الطالب}')">{اسم_الطالب}</button>
+                                <button type="button" class="var-tag"
+                                    onclick="ContractUI.insertVariable('{اسم_ولي_الامر}')">{اسم_ولي_الامر}</button>
+                                <button type="button" class="var-tag"
+                                    onclick="ContractUI.insertVariable('{الصف}')">{الصف}</button>
+                                <button type="button" class="var-tag"
+                                    onclick="ContractUI.insertVariable('{المرحلة_الدراسية}')">{المرحلة_الدراسية}</button>
+                                <button type="button" class="var-tag"
+                                    onclick="ContractUI.insertVariable('{المرحلة_الدراسية}')">{المرحلة_الدراسية}</button>
+                                <button type="button" class="var-tag"
+                                    onclick="ContractUI.insertVariable('{السنة_الدراسية}')">{السنة_الدراسية}</button>
+                                <button type="button" class="var-tag"
+                                    onclick="ContractUI.insertVariable('{البريد_الالكتروني}')">{البريد_الالكتروني}</button>
+                                <button type="button" class="var-tag"
+                                    onclick="ContractUI.insertVariable('{رقم_الواتساب}')">{رقم_الواتساب}</button>
+                                <button type="button" class="var-tag"
+                                    onclick="ContractUI.insertVariable('{التاريخ}')">{التاريخ}</button>
+                            </div>
+                        </div>
+                        <textarea id="contractText" rows="15" placeholder="اكتب نص العقد هنا...
+
+مثال: اسم الطالب: {اسم_الطالب}
+الصف: {الصف}"></textarea>
+                    </div>
+                </div>
+                <div class="input-method" id="uploadMethod" style="display: none;">
+                    <div class="upload-area" id="contractUploadArea">
+                        <svg width="60" height="60" viewBox="0 0 60 60">
+                            <path d="M30 10V40M30 40L40 30M30 40L20 30" stroke="#667eea" stroke-width="3" />
+                        </svg>
+                        <h3>اسحب ملف PDF أو Word هنا</h3>
+                        <!-- DIRECT BINDING -->
+                        <input type="file" id="contractFileInput" accept=".pdf,.doc,.docx,.txt" hidden
+                            onchange="ContractUI.handleFileUpload(this)">
+                        <button type="button" class="btn btn-secondary" id="browseContractFile"
+                            onclick="document.getElementById('contractFileInput').click()">تصفح</button>
+                    </div>
+                    <div id="uploadedContractPreview" style="display: none; margin-top: 1rem;">
+                        <p id="uploadedContractName"></p>
+                        <textarea id="extractedText" rows="12"></textarea>
+                        <button type="button" class="btn-icon" id="removeContractFile" style="margin-top: 0.5rem;"
+                            onclick="ContractUI.resetUpload()">حذف
+                            الملف</button>
+                        <button type="button" class="btn btn-primary" id="useUploadedTextBtn"
+                            style="margin-top: 0.5rem; margin-right: 10px;" onclick="ContractUI.useUploadedText()">
+                            تحرير وإضافة متغيرات
+                        </button>
+                    </div>
+                </div>
+
+                <!-- NEW PDF TEMPLATE METHOD -->
+                <div class="input-method" id="pdfTemplateMethod" style="display: none;">
+
+                    <!-- 1. Upload Section -->
+                    <div class="upload-area" id="pdfTemplateUploadArea" style="margin-bottom: 20px;">
+                        <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        <h3>رفع قالب PDF فارغ</h3>
+                        <p style="color:#718096; font-size: 0.9rem;">سيتم استخدام هذا الملف كخلفية للعقد</p>
+                        <!-- DIRECT BINDING -->
+                        <input type="file" id="pdfTemplateInput" accept=".pdf" hidden
+                            onchange="ContractUI.handlePdfTemplateUpload(this)">
+                        <button type="button" class="btn btn-secondary"
+                            onclick="document.getElementById('pdfTemplateInput').click()">اختر ملف PDF</button>
+                    </div>
+
+                    <!-- 2. Editor Container (Hidden until upload) -->
+                    <div id="pdfTemplateEditor" style="display: none;">
+
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                            <div style="flex: 1;">
+                                <h4>معاينة القالب</h4>
+                                <p style="font-size: 12px; color: #666;">اضغط على المكان الذي تريد إضافة المتغير فيه</p>
+                            </div>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <button type="button" class="btn btn-secondary btn-sm" id="prevPageBtn"
+                                    title="الصفحة السابقة">&lt;</button>
+                                <span id="pageInfo">صفحة 1 / 1</span>
+                                <button type="button" class="btn btn-secondary btn-sm" id="nextPageBtn"
+                                    title="الصفحة التالية">&gt;</button>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 20px; align-items: flex-start;">
+
+                            <!-- Sidebar Tools -->
+                            <div
+                                style="width: 250px; flex-shrink: 0; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                                <h5 style="margin-top: 0; margin-bottom: 10px;">المتغيرات المتاحة</h5>
+                                <div id="pdfVariablesList" style="display: flex; flex-direction: column; gap: 8px;">
+                                    <!-- Standard Variables -->
+                                    <button type="button" class="var-btn" data-var="{اسم_الطالب}"
+                                        onclick="ContractUI.handleVariableClick('{اسم_الطالب}')">اسم الطالب</button>
+                                    <button type="button" class="var-btn" data-var="{اسم_ولي_الامر}"
+                                        onclick="ContractUI.handleVariableClick('{اسم_ولي_الامر}')">اسم ولي
+                                        الأمر</button>
+                                    <button type="button" class="var-btn" data-var="{الصف}"
+                                        onclick="ContractUI.handleVariableClick('{الصف}')">الصف</button>
+                                    <button type="button" class="var-btn" data-var="{المرحلة_الدراسية}"
+                                        onclick="ContractUI.handleVariableClick('{المرحلة_الدراسية}')">المرحلة
+                                        الدراسية</button>
+                                    <button type="button" class="var-btn" data-var="{السنة_الدراسية}"
+                                        onclick="ContractUI.handleVariableClick('{السنة_الدراسية}')">السنة
+                                        الدراسية</button>
+                                    <button type="button" class="var-btn" data-var="{التاريخ}"
+                                        onclick="ContractUI.handleVariableClick('{التاريخ}')">التاريخ</button>
+                                    <button type="button" class="var-btn" data-var="{التوقيع}"
+                                        onclick="ContractUI.handleVariableClick('{التوقيع}')">مكان التوقيع
+                                        (صورة)</button>
+                                    <button type="button" class="var-btn" data-var="{الختم}"
+                                        onclick="ContractUI.handleVariableClick('{الختم}')">مكان الختم (صورة)</button>
+
+                                    <!-- Dynamic fields will be appended here -->
+                                </div>
+
+                                <h5 style="margin-top: 20px; margin-bottom: 10px;">الحقول المضافة</h5>
+                                <ul id="addedFieldsList"
+                                    style="list-style: none; padding: 0; margin: 0; font-size: 12px; max-height: 200px; overflow-y: auto;">
+                                    <!-- Populated items -->
+                                </ul>
+                            </div>
+
+                            <!-- PDF Canvas -->
+                            <div
+                                style="flex: 1; position: relative; border: 1px solid #ccc; background: #525659; overflow: auto; max-height: 600px; text-align: center;">
+                                <div id="pdfCanvasContainer" style="position: relative; display: inline-block;">
+                                    <canvas id="the-canvas" style="border: 1px solid black; direction: ltr;"></canvas>
+                                    <div id="pdfFieldsOverlay"
+                                        style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; direction: ltr;">
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="setAsDefault">
+                        <span>تعيين كعقد افتراضي</span>
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="cancelContractBtn">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">حفظ العقد</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Force cache invalidation for main scripts
+        const timestamp = Date.now();
+        document.write('<script src="script.js?t=' + timestamp + '"><\/script>');
+        document.write('<script src="contracts.js?t=' + timestamp + '"><\/script>');
+    </script>
+    <!-- Preview Modal -->
+    <div id="contractPreviewModal" class="modal">
+        <div class="modal-content" style="max-width: 850px;">
+            <div class="modal-header">
+                <h3>معاينة العقد</h3>
+                <button class="close-btn" onclick="UI.closePreviewModal()">&times;</button>
+            </div>
+            <div id="contractPreviewBody" style="padding: 2rem; background: #fff; direction: rtl;">
+                <!-- Content injected by JS -->
+            </div>
+            <div class="form-actions" style="padding: 1.5rem; justify-content: center;">
+                <button class="btn btn-secondary" onclick="UI.closePreviewModal()">إغلاق المعاينة</button>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>
