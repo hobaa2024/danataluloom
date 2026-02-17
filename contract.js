@@ -38,6 +38,17 @@ let lastY = 0;
 // Global cache for fonts to speed up generation
 let cachedCairoFont = null;
 
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) return resolve();
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = (e) => reject(new Error(`Failed to load script: ${src}`));
+        document.head.appendChild(script);
+    });
+}
+
 // Pre-fetch font immediately
 // Pre-fetch font immediately with hyper-resilience
 (async function prefetchFont() {
@@ -417,12 +428,25 @@ async function loadStudentData() {
                     currentStudent.contractType = 'pdf_template';
 
                     // Start Loading PDF (Personalized with student data)
+                    const pdfGenerationTimeout = setTimeout(() => {
+                        const loadingState = document.getElementById('pdf-loading-state');
+                        if (loadingState && loadingState.style.display !== 'none') {
+                            loadingState.innerHTML = `
+                                <div style="color: #4a5568;">
+                                    <p>⚙️ العملية تأخذ وقتاً أطول من المتوقع (بسبب جودة الملفات أو سرعة الشبكة)...</p>
+                                    <p style="font-size: 0.8rem; margin-top:5px;">يرجى الانتظار قليلاً أو محاولة تحديث الصفحة.</p>
+                                </div>
+                            `;
+                        }
+                    }, 12000);
+
                     setTimeout(async () => {
                         try {
                             console.log("Generating personalized PDF preview...");
                             const pdfBytes = await generatePdfFromTemplate(contract, student);
+                            clearTimeout(pdfGenerationTimeout);
+
                             if (pdfBytes) {
-                                // Direct Embed Fix
                                 const blob = new Blob([pdfBytes], { type: 'application/pdf' });
                                 const url = window.URL.createObjectURL(blob);
 
@@ -432,32 +456,32 @@ async function loadStudentData() {
                                 const previewContainer = document.getElementById('pdf-preview-container');
                                 if (previewContainer) {
                                     previewContainer.style.display = 'block';
-                                    previewContainer.innerHTML = `<iframe src="${url}" style="width:100%; height:600px; border:none;" title="Contract Preview"></iframe>`;
+                                    previewContainer.innerHTML = `<iframe src="${url}" style="width:100%; height:800px; border:none; border-radius:8px;" title="Contract Preview"></iframe>`;
 
-                                    // Add Download Button for Backup
                                     const dlBtn = document.createElement('a');
                                     dlBtn.href = url;
-                                    dlBtn.download = `contract_${student.studentName || 'signed'}.pdf`;
+                                    dlBtn.download = `عقد_${student.studentName || 'مدرسي'}.pdf`;
                                     dlBtn.className = 'btn btn-primary';
                                     dlBtn.style.display = 'block';
                                     dlBtn.style.textAlign = 'center';
                                     dlBtn.style.marginTop = '15px';
-                                    dlBtn.innerHTML = '📥 تحميل نسخة PDF الآن';
+                                    dlBtn.innerHTML = '📥 تحميل العقد المكتمل (PDF)';
                                     previewContainer.parentNode.insertBefore(dlBtn, previewContainer.nextSibling);
                                 }
                             } else {
                                 throw new Error("Generated PDF is empty");
                             }
                         } catch (err) {
-                            console.error("PDF Preview Generation Error:", err);
-                            // Hide loading and show error message
-                            const loadingEl = document.getElementById('pdf-loading-state');
-                            if (loadingEl) {
-                                loadingEl.innerHTML = `
-                                    <p style="color: #e53e3e; font-weight: bold;">⚠️ عذراً، حدث خطأ أثناء تحضير العقد.</p>
-                                    <p style="font-size: 0.8rem; margin-top: 10px; color: #718096;">التفاصيل: ${err.message || 'خطأ غير معروف'}</p>
-                                    <p style="font-size: 0.8rem; border-top: 1px solid #ddd; margin-top: 10px; padding-top: 10px;">يرجى تصوير الشاشة وإرسالها للإدارة.</p>
-                                    <button class="btn btn-secondary btn-sm" onclick="location.reload()" style="margin-top:20px;">تحديث الصفحة</button>
+                            console.error("PDF Preview generation failed:", err);
+                            clearTimeout(pdfGenerationTimeout);
+                            const loadingState = document.getElementById('pdf-loading-state');
+                            if (loadingState) {
+                                loadingState.innerHTML = `
+                                    <div style="color: #e53e3e; font-weight: bold; background: #fff5f5; padding: 15px; border-radius: 8px; border: 1px solid #feb2b2;">
+                                        <p>⚠️ عذراً، تعذر تحميل معاينة العقد.</p>
+                                        <p style="font-size: 0.8rem; font-weight: normal; margin-top: 5px;">السبب: ${err.message || 'خطأ في المعالجة'}</p>
+                                        <button class="btn btn-secondary btn-sm" style="margin-top:10px;" onclick="location.reload()">تحديث الصفحة</button>
+                                    </div>
                                 `;
                             }
                         }
@@ -973,72 +997,74 @@ function validateForm() {
 document.getElementById('agreeTerms')?.addEventListener('change', validateForm);
 
 document.getElementById('submitContract')?.addEventListener('click', async () => {
-    const btn = document.getElementById('submitContract'); if (btn.disabled) return;
-    btn.disabled = true;
-    document.getElementById('submitText').innerHTML = 'جاري الإرسال المأمون...';
-    signatureData = canvas.toDataURL('image/png');
-    const contractNo = 'CON-' + Date.now().toString().slice(-6);
-    const now = new Date();
-    // Update global currentStudent object immediately so generates PDF correctly
-    if (typeof currentStudent !== 'undefined') {
-        currentStudent.contractStatus = 'signed';
-        currentStudent.signedAt = now.toISOString();
-        currentStudent.signature = signatureData;
-        currentStudent.idImage = uploadedFile;
-        currentStudent.extraDocs = extraDocs;
-        currentStudent.contractNo = contractNo;
-    }
+    const btn = document.getElementById('submitContract');
+    if (btn.disabled) return;
 
-    if (studentIdToSave) {
-        const data = {
+    try {
+        btn.disabled = true;
+        document.getElementById('submitText').innerHTML = 'جاري الحفظ والإرسال...';
+
+        signatureData = canvas.toDataURL('image/png');
+        const contractNo = 'CON-' + Date.now().toString().slice(-6);
+        const now = new Date();
+
+        // Ensure student data is consistent
+        const studentToSave = {
+            ...currentStudent,
             contractStatus: 'signed',
             signedAt: now.toISOString(),
             signature: signatureData,
             idImage: uploadedFile,
-            birthCertImage: birthCertFile,
-            passportImage: passportFile,
-            contractNo
+            extraDocs: extraDocs,
+            contractNo: contractNo
         };
-        if (typeof CloudDB !== 'undefined') await CloudDB.updateContract(String(studentIdToSave), data);
+
+        // 1. Save Locally (Highest Priority)
         const students = JSON.parse(localStorage.getItem('students') || '[]');
         const idx = students.findIndex(s => String(s.id) === String(studentIdToSave));
-        if (idx !== -1) { Object.assign(students[idx], data); localStorage.setItem('students', JSON.stringify(students)); }
-    }
+        if (idx !== -1) {
+            students[idx] = { ...students[idx], ...studentToSave };
+            localStorage.setItem('students', JSON.stringify(students));
+        }
 
-    // Call the correct function - showSuccessAfterSigning for FRESH signatures
-    const studentName = document.getElementById('contractStudentName')?.textContent || 'Student';
-    const successData = {
-        studentName,
-        contractNo,
-        signedAt: now.toISOString(),
-        signature: signatureData,
-        idImage: uploadedFile,
-        birthCertImage: birthCertFile,
-        passportImage: passportFile,
-        contractType: currentStudent?.contractType || 'text',
-        contract: currentStudent?.contract || null,
-        cachedContractContent: currentStudent?.cachedContractContent || '',
-        cachedContractTitle: currentStudent?.cachedContractTitle || ''
-    };
+        // 2. Save Updated Student to Current State
+        currentStudent = studentToSave;
 
-    if (typeof showSuccessAfterSigning === 'function') {
-        showSuccessAfterSigning(successData);
+        // 3. Save to Cloud (Background - don't let it block if slow)
+        if (studentIdToSave && typeof CloudDB !== 'undefined') {
+            CloudDB.updateContract(String(studentIdToSave), {
+                contractStatus: 'signed',
+                signedAt: now.toISOString(),
+                signature: signatureData,
+                idImage: uploadedFile,
+                extraDocs: extraDocs,
+                contractNo: contractNo
+            }).catch(e => console.warn("Cloud Sync Deferred:", e));
+        }
 
-        // Setup download button immediately
-        setTimeout(() => {
-            setupPdfDownload(studentName, contractNo);
-        }, 500);
-    } else if (typeof showAlreadySignedSimplified === 'function') {
-        // Fallback only if showSuccessAfterSigning doesn't exist
-        showAlreadySignedSimplified(successData);
+        // 4. Prepare Success Data
+        const studentName = document.getElementById('contractStudentName')?.textContent || currentStudent?.studentName || 'الطالب';
+        const successData = {
+            ...currentStudent,
+            studentName,
+            contractNo,
+            signedAt: now.toISOString()
+        };
 
-        setTimeout(() => {
-            setupPdfDownload(studentName, contractNo);
-        }, 500);
-    } else {
-        console.error("Success function not found!");
-        alert("تم توقيع العقد بنجاح! (" + contractNo + ")");
-        location.reload();
+        // 5. Show Success UI
+        if (typeof showSuccessAfterSigning === 'function') {
+            showSuccessAfterSigning(successData);
+            setTimeout(() => { if (typeof setupPdfDownload === 'function') setupPdfDownload(studentName, contractNo); }, 800);
+        } else {
+            console.error("Success UI function not found");
+            alert("تم توقيع العقد بنجاح برقم: " + contractNo);
+            location.reload();
+        }
+    } catch (error) {
+        console.error("Submission Error:", error);
+        alert("عذراً، حدث خطأ أثناء الإرسال. يرجى المحاولة مرة أخرى.");
+        btn.disabled = false;
+        document.getElementById('submitText').innerHTML = 'إرسال العقد الموقع';
     }
 });
 
@@ -1107,7 +1133,10 @@ async function generatePdfFromTemplate(template, studentData) {
 
     // Ensure critical dependencies are loaded (Hyper-Resiliency)
     if (!PDFLib_ref) {
-        try { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js'); } catch (e) { }
+        try { await loadScript('https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js'); } catch (e) { }
+    }
+    if (typeof fontkit === 'undefined') {
+        try { await loadScript('https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js'); } catch (e) { }
     }
     if (typeof ArabicReshaper === 'undefined') {
         try { await loadScript('https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js'); } catch (e) {
