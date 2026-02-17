@@ -1030,7 +1030,8 @@ const UI = {
             pnid: student.customFields?.parentNationalId || '',
             adr: student.address || student.customFields?.address || '',
             nat: student.nationality || student.studentNationality || student.customFields?.nationality || '',
-            rt: student.registrationType || 'existing'
+            rt: student.registrationType || 'existing',
+            tr: student.customFields?.studentTrack || student.studentTrack || ''
         };
 
         // Fallback: If critical fields are missing, search in customFields by label
@@ -1464,17 +1465,18 @@ const UI = {
                         ${idCardSection}
                     </div>` : ''}
                     
-                    ${studentData.birthCertImage ? `
-                    <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center; page-break-before:always;">
-                        <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">شهادة الميلاد</p>
-                        <img src="${studentData.birthCertImage}" style="max-height:850px; max-width:95%; border:1px solid #edf2f7; border-radius:8px;">
-                    </div>` : ''}
-
-                    ${studentData.passportImage ? `
-                    <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center; page-break-before:always;">
-                        <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">الجواز / الإقامة</p>
-                        <img src="${studentData.passportImage}" style="max-height:850px; max-width:95%; border:1px solid #edf2f7; border-radius:8px;">
-                    </div>` : ''}
+                    ${(() => {
+                let html = '';
+                const docs = studentData.extraDocs || [];
+                docs.forEach((doc, idx) => {
+                    html += `
+                            <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center; page-break-before:always;">
+                                <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">مستند إضافي (${idx + 1})</p>
+                                <img src="${doc}" style="max-height:850px; max-width:95%; border:1px solid #edf2f7; border-radius:8px;">
+                            </div>`;
+                });
+                return html;
+            })()}
                 </div>
             </div>`;
     },
@@ -2559,6 +2561,8 @@ ${link}
                         nationalId: String(row['رقم الهوية'] || row['الهوية'] || row['سجل'] || row['Id'] || ''),
                         contractYear: row['السنة الدراسية'] || row['السنة'] || row['Year'] || new Date().getFullYear().toString(),
                         sendMethod: row['طريقة الإرسال'] || row['SendMethod'] || 'whatsapp',
+                        registrationType: row['نوع التسجيل'] || row['RegistrationType'] || 'existing',
+                        studentNationality: row['الجنسية'] || row['Nationality'] || 'سعودي',
                         contractTemplateId: assignedContractId,
                         customFields: customFields
                     };
