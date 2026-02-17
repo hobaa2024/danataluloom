@@ -25,6 +25,8 @@ if (typeof GLOBAL_CAIRO_FONT !== 'undefined' && GLOBAL_CAIRO_FONT) {
 
 // Global State
 let uploadedFile = null;
+let birthCertFile = null;
+let passportFile = null;
 let signatureData = null;
 let hasDrawn = false;
 let studentIdToSave = null;
@@ -179,7 +181,17 @@ function updateProgress() {
         step2.classList.add('active');
     }
 
-    if (uploadedFile && hasDrawn && (document.getElementById('agreeTerms')?.checked)) {
+    // Check if new student requirements are met
+    const isNew = currentStudent?.registrationType === 'mustajid';
+    const isNotSaudi = currentStudent?.nationality !== 'سعودي';
+    const needsBirthCert = isNew;
+    const needsPassport = isNew && isNotSaudi;
+
+    let extraFilesReady = true;
+    if (needsBirthCert && !birthCertFile) extraFilesReady = false;
+    if (needsPassport && !passportFile) extraFilesReady = false;
+
+    if (uploadedFile && hasDrawn && (document.getElementById('agreeTerms')?.checked) && extraFilesReady) {
         step3.classList.add('completed');
         completedSteps++;
     } else if (uploadedFile) {
@@ -225,19 +237,31 @@ async function loadStudentData() {
             if (json) {
                 const data = JSON.parse(json);
                 student = {
-                    id: data.i, studentName: data.s, studentLevel: data.l, studentGrade: data.g,
-                    parentName: data.p, parentEmail: data.e, parentWhatsapp: data.w, contractYear: data.y,
+                    id: data.i,
+                    studentName: data.s || '',
+                    studentLevel: data.l || '',
+                    studentGrade: data.g || '',
+                    parentName: data.p || '',
+                    parentEmail: data.e || '',
+                    parentWhatsapp: data.w || '',
+                    contractYear: data.y || '',
                     contractTemplateId: data.tid || '',
-                    contractStatus: 'pending', // Default to pending for URL loaded students
+                    contractStatus: 'pending',
                     nationalId: data.nid || '',
                     parentNationalId: data.pnid || '',
                     address: data.adr || '',
+                    address: data.adr || '',
                     nationality: data.nat || '',
+                    registrationType: data.rt || 'existing',
                     customFields: {
                         nationalId: data.nid || '',
                         parentNationalId: data.pnid || '',
                         address: data.adr || '',
-                        nationality: data.nat || ''
+                        nationality: data.nat || '',
+                        studentLevel: data.l || '',
+                        studentGrade: data.g || '',
+                        studentTrack: data.track || '',
+                        registrationType: data.rt || 'existing'
                     }
                 };
                 studentIdToSave = data.i;
@@ -273,10 +297,13 @@ async function loadStudentData() {
             if (student) {
                 student = {
                     ...student,
-                    // Keep critical data from Firebase
+                    // Bring in all data from Firebase as fallback
+                    ...firebaseStudent,
+                    // Ensure customFields are merged, not overwritten
+                    customFields: { ...(student.customFields || {}), ...(firebaseStudent.customFields || {}) },
+                    // Status and Signature logic
                     contractStatus: firebaseStudent.contractStatus || student.contractStatus,
                     contractNo: firebaseStudent.contractNo || student.contractNo,
-                    customFields: { ...(student.customFields || {}), ...(firebaseStudent.customFields || {}) },
                     idImage: firebaseStudent.idImage || student.idImage,
                     signature: firebaseStudent.signature || student.signature
                 };
@@ -293,6 +320,14 @@ async function loadStudentData() {
         document.getElementById('contractGrade').textContent = `الصف ${student.studentGrade}`;
         document.getElementById('contractYear').textContent = student.contractYear;
         document.getElementById('contractParentName').textContent = student.parentName;
+
+        // Show/Hide extra documents based on Registration Type & Nationality
+        if (student.registrationType === 'mustajid') {
+            document.getElementById('birthCertSection').style.display = 'block';
+            if (student.nationality && student.nationality !== 'سعودي') {
+                document.getElementById('passportSection').style.display = 'block';
+            }
+        }
 
         // Populate Contract Text BEFORE checking status (Critical for PDF generation)
         if (!contract) {
@@ -608,6 +643,18 @@ function getContractPdfHtml(studentName, contractNo) {
             <img src="${uploadedFile}" style="max-height:250px; max-width:90%; border:1px solid #ddd; padding:5px; border-radius:4px;">
         </div>` : '';
 
+    const birthCertSection = birthCertFile ? `
+        <div style="margin-top:25px; border-top:1px dashed #ccc; padding-top:20px; text-align:center; page-break-before:always;">
+            <p style="margin:0 0 10px; font-weight:bold;">صورة شهادة الميلاد</p>
+            <img src="${birthCertFile}" style="max-height:850px; max-width:95%; border:1px solid #ddd; padding:5px; border-radius:4px;">
+        </div>` : '';
+
+    const passportSection = passportFile ? `
+        <div style="margin-top:25px; border-top:1px dashed #ccc; padding-top:20px; text-align:center; page-break-before:always;">
+            <p style="margin:0 0 10px; font-weight:bold;">صورة الجواز / الإقامة</p>
+            <img src="${passportFile}" style="max-height:850px; max-width:95%; border:1px solid #ddd; padding:5px; border-radius:4px;">
+        </div>` : '';
+
     return `
         <div style="direction:rtl; font-family:'Cairo', sans-serif; background:white; padding:5mm 10mm; width:100%; box-sizing:border-box; color:#1a202c;">
             <div style="background:white; position:relative;">
@@ -640,10 +687,12 @@ function getContractPdfHtml(studentName, contractNo) {
                         </tr>
                     </table>
                     ${uploadedFile ? `
-                    <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center;">
-                        <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">صورة هوية ولي الأمر</p>
-                        <img src="${uploadedFile}" style="max-height:180px; max-width:80%; border:1px solid #edf2f7; border-radius:8px;">
+                    <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center; page-break-before:always;">
+                        <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">صورة الهوية</p>
+                        <img src="${uploadedFile}" style="max-height:850px; max-width:95%; border:1px solid #edf2f7; border-radius:8px;">
                     </div>` : ''}
+                    ${birthCertSection}
+                    ${passportSection}
                 </div>
             </div>
         </div>`;
@@ -861,10 +910,68 @@ document.getElementById('captureBtn')?.addEventListener('click', () => document.
 
 document.getElementById('removeFile')?.addEventListener('click', () => { uploadedFile = null; document.getElementById('uploadArea').style.display = 'block'; document.getElementById('uploadedPreview').style.display = 'none'; updateProgress(); validateForm(); });
 
+// EXTRA FILES HANDLERS
+function handleExtraFile(e, type) {
+    const f = e.target.files[0];
+    if (f) {
+        const r = new FileReader();
+        r.onload = (re) => {
+            const img = new Image();
+            img.onload = () => {
+                const c = document.createElement('canvas'); const max = 1200; let w = img.width, h = img.height; if (w > max) { h = h * (max / w); w = max; } c.width = w; c.height = h;
+                c.getContext('2d').drawImage(img, 0, 0, w, h);
+                const dataUrl = c.toDataURL('image/jpeg', 0.85);
+
+                if (type === 'birthCert') {
+                    birthCertFile = dataUrl;
+                    document.getElementById('previewBirthCert').src = birthCertFile;
+                    document.getElementById('birthCertArea').style.display = 'none';
+                    document.getElementById('birthCertPreview').style.display = 'block';
+                } else if (type === 'passport') {
+                    passportFile = dataUrl;
+                    document.getElementById('previewPassport').src = passportFile;
+                    document.getElementById('passportArea').style.display = 'none';
+                    document.getElementById('passportPreview').style.display = 'block';
+                }
+                updateProgress(); validateForm();
+            };
+            img.src = re.target.result;
+        };
+        r.readAsDataURL(f);
+    }
+}
+
+function removeExtraFile(type) {
+    if (type === 'birthCert') {
+        birthCertFile = null;
+        document.getElementById('birthCertArea').style.display = 'block';
+        document.getElementById('birthCertPreview').style.display = 'none';
+    } else if (type === 'passport') {
+        passportFile = null;
+        document.getElementById('passportArea').style.display = 'block';
+        document.getElementById('passportPreview').style.display = 'none';
+    }
+    updateProgress(); validateForm();
+}
+
+document.getElementById('birthCertUpload')?.addEventListener('change', (e) => handleExtraFile(e, 'birthCert'));
+document.getElementById('passportUpload')?.addEventListener('change', (e) => handleExtraFile(e, 'passport'));
+
 function validateForm() {
     const btn = document.getElementById('submitContract'); if (!btn) return;
     const agreed = document.getElementById('agreeTerms')?.checked || false;
-    btn.disabled = !(uploadedFile && hasDrawn && agreed);
+
+    // Check extra files if mustajid
+    const isNew = currentStudent?.registrationType === 'mustajid';
+    const isNotSaudi = currentStudent?.nationality !== 'سعودي';
+
+    let docsOk = !!uploadedFile;
+    if (isNew) {
+        if (!birthCertFile) docsOk = false;
+        if (isNotSaudi && !passportFile) docsOk = false;
+    }
+
+    btn.disabled = !(docsOk && hasDrawn && agreed);
 }
 
 document.getElementById('agreeTerms')?.addEventListener('change', validateForm);
@@ -882,11 +989,21 @@ document.getElementById('submitContract')?.addEventListener('click', async () =>
         currentStudent.signedAt = now.toISOString();
         currentStudent.signature = signatureData;
         currentStudent.idImage = uploadedFile;
+        currentStudent.birthCertImage = birthCertFile;
+        currentStudent.passportImage = passportFile;
         currentStudent.contractNo = contractNo;
     }
 
     if (studentIdToSave) {
-        const data = { contractStatus: 'signed', signedAt: now.toISOString(), signature: signatureData, idImage: uploadedFile, contractNo };
+        const data = {
+            contractStatus: 'signed',
+            signedAt: now.toISOString(),
+            signature: signatureData,
+            idImage: uploadedFile,
+            birthCertImage: birthCertFile,
+            passportImage: passportFile,
+            contractNo
+        };
         if (typeof CloudDB !== 'undefined') await CloudDB.updateContract(String(studentIdToSave), data);
         const students = JSON.parse(localStorage.getItem('students') || '[]');
         const idx = students.findIndex(s => String(s.id) === String(studentIdToSave));
@@ -901,6 +1018,8 @@ document.getElementById('submitContract')?.addEventListener('click', async () =>
         signedAt: now.toISOString(),
         signature: signatureData,
         idImage: uploadedFile,
+        birthCertImage: birthCertFile,
+        passportImage: passportFile,
         contractType: currentStudent?.contractType || 'text',
         contract: currentStudent?.contract || null,
         cachedContractContent: currentStudent?.cachedContractContent || '',
@@ -1200,7 +1319,7 @@ async function generatePdfFromTemplate(template, studentData) {
         else if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه' || target === 'مرحلة') text = studentData.studentLevel || studentData.customFields?.studentLevel || '';
         else if (target === 'السنةالدراسية' || target === 'السنهالدراسيه') text = studentData.customFields?.contractYear || studentData.contractYear || '';
         else if (target === 'البريدالالكتروني' || target === 'الايميل') text = studentData.parentEmail || '';
-        else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية' || target === 'هوية' || target === 'الهوية')
+        else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية')
             text = studentData.nationalId || studentData.customFields?.nationalId || '';
         else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر' || target === 'رقمهويةوليالامر')
             text = studentData.customFields?.parentNationalId || '';
@@ -1217,8 +1336,8 @@ async function generatePdfFromTemplate(template, studentData) {
             text = studentData.signature || signatureData;
             isImage = true;
         }
-        else if (target === 'الهوية' || target === 'مكانالهوية') {
-            text = uploadedFile || studentData.idImage || studentData.idCardImage || null;
+        else if (target === 'الهوية' || target === 'مكانالهوية' || target === 'صورةالهوية' || target === 'صورهالهويه') {
+            text = uploadedFile || studentData.idImage || studentData.idCardImage || studentData.uploadedFile || null;
             isImage = true;
         }
         else if (target === 'الختم' || target === 'مكانالختم') {
@@ -1228,7 +1347,7 @@ async function generatePdfFromTemplate(template, studentData) {
         }
 
         // Ultimate Fallback: Direct search by cleaned label in customFields
-        if (!text && studentData.customFields) {
+        if (!text && studentData.customFields && !isImage) {
             for (let k in studentData.customFields) {
                 if (cleanVar(k) === target) {
                     text = studentData.customFields[k];
@@ -1293,6 +1412,37 @@ async function generatePdfFromTemplate(template, studentData) {
             }
         }
     }
+    // --- APPEND EXTRA PAGES FOR DOCUMENTS ---
+    const docsToAppend = [
+        { data: studentData.idImage || uploadedFile, label: 'الذكر الذاتية / الهوية' },
+        { data: studentData.birthCertImage || birthCertFile, label: 'شهادة الميلاد' },
+        { data: studentData.passportImage || passportFile, label: 'الجواز / الإقامة' }
+    ];
+
+    for (const doc of docsToAppend) {
+        if (doc.data) {
+            try {
+                const page = pdfDoc.addPage([595, 842]); // A4 Size
+                let b64 = doc.data;
+                if (b64.includes(',')) b64 = b64.split(',')[1];
+
+                let img;
+                if (doc.data.startsWith('data:image/png')) img = await pdfDoc.embedPng(b64);
+                else img = await pdfDoc.embedJpg(b64);
+
+                if (img) {
+                    const dims = img.scaleToFit(540, 780);
+                    page.drawImage(img, {
+                        x: (595 - dims.width) / 2,
+                        y: (842 - dims.height) / 2,
+                        width: dims.width,
+                        height: dims.height
+                    });
+                }
+            } catch (e) { console.warn("Failed to append PDF page:", doc.label, e); }
+        }
+    }
+
     return await pdfDoc.save();
 }
 

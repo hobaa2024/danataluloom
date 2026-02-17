@@ -1050,6 +1050,15 @@
                         </svg>
                         النظام والنسخ الاحتياطي
                     </button>
+                    <button class="tab-btn" onclick="UI.switchSettingsTab('migration')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="8.5" cy="7" r="4"></circle>
+                            <polyline points="17 11 19 13 23 9"></polyline>
+                        </svg>
+                        الترحيل السنوي والأرشفة
+                    </button>
                 </div>
 
                 <!-- Tab 1: General Settings -->
@@ -1357,7 +1366,84 @@
                                 <p style="font-weight: 700;">حذف جميع البيانات المحلية</p>
                                 <p style="font-size: 0.9rem; color: var(--text-muted);">سيتم مسح كافة البيانات من
                                     هذا
-                                    <button class="btn btn-danger" onclick="UI.wipeAllData()">مسح كافة البيانات (محلي + سحابي)</button>
+                                    <button class="btn btn-danger" onclick="UI.wipeAllData()">مسح كافة البيانات (محلي +
+                                        سحابي)</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 5: Annual Migration -->
+                <div id="tab-migration" class="tab-content">
+                    <div style="display: grid; gap: 2rem;">
+                        <!-- Migration Wizard -->
+                        <div class="card" style="border-right: 4px solid var(--primary-main);">
+                            <div class="card-header">
+                                <h3 style="font-weight:700;">مساعد الترحيل السنوي (ترفيع الطلاب)</h3>
+                                <p style="font-size:0.85rem; color:var(--text-muted)">استخدم هذه الأداة لنقل الطلاب
+                                    للصفوف التالية وتصفير التواقيع للسنة الدراسية الجديدة.</p>
+                            </div>
+                            <div class="card-body" style="padding: 2rem;">
+                                <div
+                                    style="background: #fdf2f2; border: 1px solid #fecaca; padding: 1.25rem; border-radius: 12px; color: #991b1b; margin-bottom: 2rem; font-size: 0.95rem; border-right: 5px solid #ef4444;">
+                                    <strong>⚠️ تنبيه هام جداً:</strong><br>
+                                    1. سيتم ترفيع كل طالب للصف الذي يليه (حسب ترتيب الصفوف المحددة في الإعدادات
+                                    العامة).<br>
+                                    2. سيتم أرشفة عقود السنة الحالية (بكل تواقيعها وصورها) في سجل تاريخ الطالب.<br>
+                                    3. ستصبح حالة جميع الطلاب "بانتظار التوقيع" للسنة الجديدة.<br>
+                                    4. الطلاب في "آخر صف دراسي" سيتم نقلهم تلقائياً للأرشيف.
+                                </div>
+                                <div class="form-group" style="max-width: 500px;">
+                                    <label style="font-weight:700;">مسمى السنة الدراسية القادمة</label>
+                                    <input type="text" id="nextYearLabel" placeholder="مثال: 1447هـ - 2026م"
+                                        style="padding: 12px; font-size: 1.1rem;">
+                                    <small style="color:var(--text-muted)">هذا المسمى سيظهر في العقود الجديدة لولي
+                                        الأمر.</small>
+                                </div>
+                                <button class="btn btn-primary" onclick="UI.startMigration()"
+                                    style="margin-top: 1.5rem; padding: 12px 30px; font-weight: 700;">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" style="margin-left: 8px;">
+                                        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                        <circle cx="8.5" cy="7" r="4"></circle>
+                                        <line x1="20" y1="8" x2="20" y2="14"></line>
+                                        <line x1="23" y1="11" x2="17" y2="11"></line>
+                                    </svg>
+                                    تأفيذ ترحيل الطلاب للسنة القادمة
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Archive Explorer -->
+                        <div class="card">
+                            <div class="card-header"
+                                style="display:flex; justify-content:space-between; align-items:center;">
+                                <div>
+                                    <h3 style="font-weight:700;">أرشيف الطلاب المتخرجين والقدامى</h3>
+                                    <p style="font-size:0.85rem; color:var(--text-muted)">الطلاب الذين تم أرشفتهم في
+                                        سنوات سابقة.</p>
+                                </div>
+                                <button class="btn btn-secondary btn-sm" onclick="UI.refreshArchiveTable()">تحديث
+                                    القائمة</button>
+                            </div>
+                            <div class="card-body" style="padding: 1rem;">
+                                <div class="table-responsive">
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                <th>اسم الطالب</th>
+                                                <th>التخصص/المسار</th>
+                                                <th>آخر صف</th>
+                                                <th>العمليات</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="archiveTableBody">
+                                            <tr>
+                                                <td colspan="4" style="text-align:center;">تحميل بيانات الأرشيف...</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1378,6 +1464,13 @@
                     <div class="form-group">
                         <label for="studentName">اسم الطالب</label>
                         <input type="text" id="studentName" required placeholder="أدخل اسم الطالب الكامل">
+                    </div>
+                    <div class="form-group">
+                        <label for="studentNationality">الجنسية</label>
+                        <select id="studentNationality">
+                            <option value="سعودي">سعودي</option>
+                            <option value="غير سعودي">غير سعودي</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label for="studentTrack">المسار التعليمي</label>
@@ -1443,6 +1536,13 @@
                             <option value="email">البريد الإلكتروني</option>
                             <option value="whatsapp">الواتساب</option>
                             <option value="both">كلاهما</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="registrationType">نوع التسجيل</label>
+                        <select id="registrationType" required>
+                            <option value="existing">طالب قديم (إعادة تسجيل)</option>
+                            <option value="mustajid">طالب مستجد (تسجيل جديد)</option>
                         </select>
                     </div>
                 </div>

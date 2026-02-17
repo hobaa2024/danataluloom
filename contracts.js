@@ -181,7 +181,7 @@ class ContractManager {
                 return;
             }
 
-            if (target === 'الهوية' || target === 'صورةالهوية') {
+            if (target === 'الهوية' || target === 'صورةالهوية' || target === 'مكانالهوية') {
                 const idSrc = studentData.idImage || studentData.idCardImage;
                 const idImg = idSrc
                     ? `<img src="${idSrc}" style="max-height:150px; max-width:300px; display:block; margin:10px 0; border:1px solid #ccc;">`
@@ -417,7 +417,7 @@ class ContractManager {
             else if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه' || target === 'مرحلة') text = studentData.studentLevel || studentData.customFields?.studentLevel || '';
             else if (target === 'السنةالدراسية' || target === 'السنهالدراسيه') text = studentData.customFields?.contractYear || studentData.contractYear || '';
             else if (target === 'البريدالالكتروني' || target === 'الايميل') text = studentData.parentEmail || '';
-            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية' || target === 'هوية' || target === 'الهوية')
+            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية')
                 text = studentData.customFields?.nationalId || studentData.nationalId || '';
             else if (target === 'هويةوليالامر' || target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر') text = studentData.customFields?.parentNationalId || studentData.parentNationalId || '';
             else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'جوال' || target === 'الواتساب' || target === 'رقمجوالوليالامر')
@@ -431,10 +431,10 @@ class ContractManager {
                 const s = (typeof db !== 'undefined' && db.getSettings) ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
                 text = s.stampImage || window.SCHOOL_STAMP_IMAGE; isImage = true;
             }
-            else if (target === 'الهوية' || target === 'مكانالهوية') { text = studentData.idImage || studentData.idCardImage || studentData.uploadedFile; isImage = true; }
+            else if (target === 'الهوية' || target === 'مكانالهوية' || target === 'صورةالهوية' || target === 'صورهالهويه') { text = studentData.idImage || studentData.idCardImage || studentData.uploadedFile; isImage = true; }
             else {
                 // Check custom fields by label (Search in studentData.customFields)
-                if (studentData.customFields) {
+                if (studentData.customFields && !isImage) {
                     try {
                         const s = (typeof db !== 'undefined' && db.getSettings) ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
                         const f = (s.customFields || []).find(f => cleanVar(f.label) === target);

@@ -864,34 +864,78 @@
             </div>
         </div>
 
-        <!-- Step 2: ID Upload -->
-        <div class="section-card" style="animation-delay: 0.2s">
+        <!-- Step 2: Documents Upload -->
+        <div class="section-card" id="docsStep" style="animation-delay: 0.2s">
             <div class="section-header">
                 <div class="section-icon">🪪</div>
                 <div>
-                    <div class="section-title">إرفاق صورة الهوية</div>
-                    <div class="section-subtitle">قم بتصوير الهوية أو اختر صورة من الجهاز</div>
+                    <div class="section-title">إرفاق المستندات المطلوبة</div>
+                    <div class="section-subtitle">يرجى رفع صور واضحة للمستندات المطلوبة</div>
                 </div>
             </div>
 
-            <div class="upload-area" id="uploadArea">
-                <div class="upload-icon">📸</div>
-                <div class="upload-text">اختر صورة الهوية أو التقط صورة جديدة</div>
-                <input type="file" id="idUpload" accept="image/*" style="display: none;">
-                <input type="file" id="idCapture" accept="image/*" capture="environment" style="display: none;">
-                <div class="upload-buttons">
-                    <button class="btn btn-primary" onclick="document.getElementById('idUpload').click()">
-                        📁 اختيار من الجهاز
-                    </button>
-                    <button class="btn btn-secondary" id="captureBtn">
-                        📷 التقاط صورة
-                    </button>
+            <!-- ID Card Section (Required for all) -->
+            <div class="upload-group" style="margin-bottom: 2rem;">
+                <h4 style="margin-bottom: 0.8rem; color: var(--text-dark);">1. صورة الهوية / الإقامة <span
+                        style="color:red">*</span></h4>
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📸</div>
+                    <div class="upload-text">اختر صورة الهوية أو التقط صورة جديدة</div>
+                    <input type="file" id="idUpload" accept="image/*" style="display: none;">
+                    <input type="file" id="idCapture" accept="image/*" capture="environment" style="display: none;">
+                    <div class="upload-buttons">
+                        <button class="btn btn-primary" onclick="document.getElementById('idUpload').click()">
+                            📁 اختيار من الجهاز
+                        </button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('idCapture').click()">
+                            📷 التقاط صورة
+                        </button>
+                    </div>
+                </div>
+                <div class="uploaded-preview" id="uploadedPreview">
+                    <button class="remove-btn" id="removeFile">×</button>
+                    <img id="previewImage" src="" class="preview-image" alt="معاينة الهوية">
                 </div>
             </div>
 
-            <div class="uploaded-preview" id="uploadedPreview">
-                <button class="remove-btn" id="removeFile">×</button>
-                <img id="previewImage" src="" class="preview-image" alt="معاينة الهوية">
+            <!-- Birth Certificate (For New Students Only) -->
+            <div class="upload-group" id="birthCertSection" style="margin-bottom: 2rem; display: none;">
+                <h4 style="margin-bottom: 0.8rem; color: var(--text-dark);">2. صورة شهادة الميلاد <span
+                        style="color:red">*</span></h4>
+                <div class="upload-area" id="birthCertArea">
+                    <div class="upload-icon">📜</div>
+                    <div class="upload-text">اختر صورة شهادة الميلاد</div>
+                    <input type="file" id="birthCertUpload" accept="image/*" style="display: none;">
+                    <div class="upload-buttons">
+                        <button class="btn btn-primary" onclick="document.getElementById('birthCertUpload').click()">
+                            📁 اختيار الملف
+                        </button>
+                    </div>
+                </div>
+                <div class="uploaded-preview" id="birthCertPreview" style="display:none;">
+                    <button class="remove-btn" onclick="removeExtraFile('birthCert')">×</button>
+                    <img id="previewBirthCert" src="" class="preview-image" alt="معاينة شهادة الميلاد">
+                </div>
+            </div>
+
+            <!-- Passport / Residency (For New Non-Saudi Students Only) -->
+            <div class="upload-group" id="passportSection" style="margin-bottom: 2rem; display: none;">
+                <h4 style="margin-bottom: 0.8rem; color: var(--text-dark);">3. صورة الجواز (لغير السعوديين) <span
+                        style="color:red">*</span></h4>
+                <div class="upload-area" id="passportArea">
+                    <div class="upload-icon">🛂</div>
+                    <div class="upload-text">اختر صورة الجواز</div>
+                    <input type="file" id="passportUpload" accept="image/*" style="display: none;">
+                    <div class="upload-buttons">
+                        <button class="btn btn-primary" onclick="document.getElementById('passportUpload').click()">
+                            📁 اختيار الملف
+                        </button>
+                    </div>
+                </div>
+                <div class="uploaded-preview" id="passportPreview" style="display:none;">
+                    <button class="remove-btn" onclick="removeExtraFile('passport')">×</button>
+                    <img id="previewPassport" src="" class="preview-image" alt="معاينة الجواز">
+                </div>
             </div>
         </div>
 

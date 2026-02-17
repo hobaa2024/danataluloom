@@ -251,14 +251,18 @@ class DatabaseManager {
         }
     }
 
-    getStudents() {
+    getStudents(includeArchived = false) {
         const stored = localStorage.getItem('students');
         if (!stored) return [];
         try {
             const parsed = JSON.parse(stored);
             if (!Array.isArray(parsed)) return [];
-            // FILTER OUT GARBAGE (The fix for "undefined" appearing on refresh)
-            return parsed.filter(s => s && s.id && s.studentName && s.studentName !== 'undefined');
+
+            let filtered = parsed.filter(s => s && s.id && s.studentName && s.studentName !== 'undefined');
+            if (!includeArchived) {
+                filtered = filtered.filter(s => !s.isArchived);
+            }
+            return filtered;
         } catch (e) {
             console.error('Data Parsing Error:', e);
             return [];
@@ -339,6 +343,68 @@ class DatabaseManager {
             pending: students.filter(s => s.contractStatus === 'pending').length,
             sent: students.filter(s => s.contractStatus === 'sent').length
         };
+    }
+
+    migrateStudents(nextYearLabel) {
+        console.log('🚀 Starting Annual Migration to:', nextYearLabel);
+        const students = this.getStudents(true); // Get all including archived
+        const settings = this.getSettings();
+        const gradesOrder = settings.grades || [];
+
+        let promotedCount = 0;
+        let archivedCount = 0;
+
+        const updatedStudents = students.map(student => {
+            // Only migrate active students
+            if (student.isArchived) return student;
+
+            // 1. Archive current contract if signed/verified
+            if (student.contractStatus === 'signed' || student.contractStatus === 'verified') {
+                if (!student.contractHistory) student.contractHistory = [];
+                student.contractHistory.push({
+                    contractYear: student.contractYear || '---',
+                    studentGrade: student.studentGrade || '',
+                    studentLevel: student.studentLevel || '',
+                    signature: student.signature || student.signatureData || null,
+                    idImage: student.idImage || student.idCardImage || null,
+                    signedAt: student.signedAt || new Date().toISOString(),
+                    contractStatus: student.contractStatus,
+                    contractTemplateId: student.contractTemplateId || ''
+                });
+            }
+
+            // 2. Promote Grade based on current grade list order
+            const currentGrade = student.studentGrade;
+            const currentIdx = gradesOrder.indexOf(currentGrade);
+
+            if (currentIdx !== -1 && currentIdx < gradesOrder.length - 1) {
+                student.studentGrade = gradesOrder[currentIdx + 1];
+                promotedCount++;
+            } else if (currentIdx === gradesOrder.length - 1) {
+                // Graduate / Archive the student if they reached the last grade
+                student.isArchived = true;
+                archivedCount++;
+            }
+
+            // 3. Reset status for new year
+            student.contractStatus = 'pending';
+            student.contractYear = nextYearLabel;
+            student.signature = null;
+            student.signatureData = null;
+            student.idImage = null;
+            student.signedAt = null;
+
+            return student;
+        });
+
+        this.saveStudents(updatedStudents);
+
+        // Final sync if cloud is ready
+        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+            CloudDB.syncLocalToCloud();
+        }
+
+        return { promotedCount, archivedCount };
     }
 }
 
@@ -440,6 +506,9 @@ const UI = {
 
         const sendMethod = document.getElementById('sendMethod');
         if (sendMethod) sendMethod.value = 'whatsapp';
+
+        if (document.getElementById('registrationType')) document.getElementById('registrationType').value = 'existing';
+        if (document.getElementById('studentNationality')) document.getElementById('studentNationality').value = 'سعودي';
 
         this.renderStudentFormFields(); // Render empty fields for new student
         this.showModal();
@@ -960,7 +1029,8 @@ const UI = {
             nid: student.nationalId || '',
             pnid: student.customFields?.parentNationalId || '',
             adr: student.address || student.customFields?.address || '',
-            nat: student.nationality || student.customFields?.nationality || ''
+            nat: student.nationality || student.studentNationality || student.customFields?.nationality || '',
+            rt: student.registrationType || 'existing'
         };
 
         // Fallback: If critical fields are missing, search in customFields by label
@@ -969,9 +1039,18 @@ const UI = {
             const settings = db.getSettings();
             (settings.customFields || []).forEach(f => {
                 const target = cleanVar(f.label);
-                if (target === 'المرحلة' || target === 'المرحله') dataToCompress.l = dataToCompress.l || s[f.id] || '';
-                if (target === 'الصف' || target === 'الصفالدراسي') dataToCompress.g = dataToCompress.g || s[f.id] || '';
-                if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الهوية' || target === 'هوية') dataToCompress.nid = dataToCompress.nid || s[f.id] || '';
+                // Level / Stage
+                if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه' || target === 'مرحلة')
+                    dataToCompress.l = dataToCompress.l || s[f.id] || '';
+                // Grade
+                if (target === 'الصف' || target === 'الصفالدراسي')
+                    dataToCompress.g = dataToCompress.g || s[f.id] || '';
+                // National ID
+                if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية' || target === 'هوية' || target === 'الهوية')
+                    dataToCompress.nid = dataToCompress.nid || s[f.id] || '';
+                // Parent National ID
+                if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر' || target === 'رقمهويةوليالامر')
+                    dataToCompress.pnid = dataToCompress.pnid || s[f.id] || '';
             });
         }
 
@@ -1324,7 +1403,7 @@ const UI = {
             else if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه' || target === 'مرحلة') text = studentData.studentLevel || studentData.customFields?.studentLevel || '';
             else if (target === 'السنةالدراسية' || target === 'السنهالدراسيه') text = studentData.customFields?.contractYear || studentData.contractYear || '';
             else if (target === 'البريدالالكتروني' || target === 'الايميل') text = studentData.parentEmail || '';
-            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية' || target === 'هوية' || target === 'الهوية')
+            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية')
                 text = studentData.customFields?.nationalId || studentData.nationalId || '';
             else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر' || target === 'رقمهويةوليالامر')
                 text = studentData.customFields?.parentNationalId || '';
@@ -1380,9 +1459,21 @@ const UI = {
                         </tr>
                     </table>
                     ${idCardSection ? `
-                    <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center;">
-                        <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">صورة هوية ولي الأمر</p>
+                    <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center; page-break-before:always;">
+                        <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">صورة الهوية</p>
                         ${idCardSection}
+                    </div>` : ''}
+                    
+                    ${studentData.birthCertImage ? `
+                    <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center; page-break-before:always;">
+                        <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">شهادة الميلاد</p>
+                        <img src="${studentData.birthCertImage}" style="max-height:850px; max-width:95%; border:1px solid #edf2f7; border-radius:8px;">
+                    </div>` : ''}
+
+                    ${studentData.passportImage ? `
+                    <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center; page-break-before:always;">
+                        <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">الجواز / الإقامة</p>
+                        <img src="${studentData.passportImage}" style="max-height:850px; max-width:95%; border:1px solid #edf2f7; border-radius:8px;">
                     </div>` : ''}
                 </div>
             </div>`;
@@ -1613,6 +1704,15 @@ ${link}
         }
         if (document.getElementById('contractTemplate')) {
             document.getElementById('contractTemplate').value = student.contractTemplateId || '';
+        }
+        if (document.getElementById('registrationType')) {
+            document.getElementById('registrationType').value = student.registrationType || 'existing';
+        }
+        if (document.getElementById('studentNationality')) {
+            document.getElementById('studentNationality').value = student.studentNationality || 'سعودي';
+        }
+        if (document.getElementById('sendMethod')) {
+            document.getElementById('sendMethod').value = student.sendMethod || 'whatsapp';
         }
 
         // Render Custom Fields
@@ -2537,7 +2637,7 @@ ${link}
 
     exportSystemJSON() {
         console.log('💾 Starting System Snapshot...');
-        const students = db.getStudents();
+        const students = db.getStudents(true); // Include archived students in full backup
         const settings = db.getSettings();
 
         const backup = {
@@ -2702,6 +2802,127 @@ ${link}
             console.error('Download Error:', error);
             this.showNotification('❌ فشل تحميل الملف، حاول مرة أخرى');
         }
+    },
+
+    switchSettingsTab(tabId) {
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+
+        const targetTab = document.getElementById(`tab-${tabId}`);
+        if (targetTab) targetTab.classList.add('active');
+
+        // Find button by its onclick which contains tabId
+        const targetBtn = document.querySelector(`.tab-btn[onclick*="'${tabId}'"]`);
+        if (targetBtn) targetBtn.classList.add('active');
+
+        if (tabId === 'migration') {
+            this.refreshArchiveTable();
+        }
+    },
+
+    async startMigration() {
+        const nextYear = document.getElementById('nextYearLabel').value.trim();
+        if (!nextYear) {
+            alert('يرجى إدخال مسمى السنة الدراسية القادمة أولاً.');
+            return;
+        }
+
+        if (!confirm(`هل أنت متأكد من بدء ترحيل جميع الطلاب للسنة (${nextYear})؟\n\nستتم أرشفة العقود الحالية وتصفير التواقيع.\nلا يمكن التراجع عن هذه الخطوة بسهولة.`)) {
+            return;
+        }
+
+        try {
+            this.showNotification('⏳ جاري تنفيذ عملية الترحيل...');
+            const result = db.migrateStudents(nextYear);
+
+            this.showNotification(`✅ اكتمل الترحيل: تم ترفيع ${result.promotedCount} طلاب وأرشفة ${result.archivedCount} طلاب.`);
+            this.renderStudents();
+            this.updateStats();
+            this.refreshArchiveTable();
+        } catch (error) {
+            console.error('Migration Error:', error);
+            alert('حدث خطأ أثناء الترحيل: ' + error.message);
+        }
+    },
+
+    refreshArchiveTable() {
+        const tbody = document.getElementById('archiveTableBody');
+        if (!tbody) return;
+
+        const archived = db.getStudents(true).filter(s => s.isArchived);
+        tbody.innerHTML = '';
+
+        if (archived.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 2rem; color: var(--text-muted);">لا يوجد طلاب في الأرشيف حالياً</td></tr>';
+            return;
+        }
+
+        archived.forEach(student => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><div style="font-weight: bold;">${student.studentName}</div></td>
+                <td>${student.studentTrack || '-'}</td>
+                <td>${student.studentGrade || '-'}</td>
+                <td>
+                    <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                        <button class="btn btn-secondary btn-sm" onclick="UI.viewStudentHistory('${student.id}')">عرض السجل</button>
+                        <button class="btn btn-icon" onclick="UI.deleteStudent('${student.id}'); UI.refreshArchiveTable();" style="color: #ef4444;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    },
+
+    viewStudentHistory(studentId) {
+        console.log('📜 Viewing history for student:', studentId);
+        const student = db.getStudents(true).find(s => String(s.id) === String(studentId));
+        if (!student) return;
+
+        if (!student.contractHistory || student.contractHistory.length === 0) {
+            alert('لا يوجد سجل عقود سابقة محفوظ لهذا الطالب حالياً.');
+            return;
+        }
+
+        let historyHtml = `
+            <div style="direction: rtl; text-align: right; font-family: 'Cairo', sans-serif;">
+                <h2 style="margin-bottom:1.5rem; border-bottom: 2px solid var(--primary-main); padding-bottom:0.5rem; color: var(--primary-main);">سجل العقود والأرشفة: ${student.studentName}</h2>
+                <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        `;
+
+        student.contractHistory.forEach((h, idx) => {
+            historyHtml += `
+                <div style="border: 1px solid var(--border-color); border-radius: 12px; padding: 1.5rem; background: #fff; box-shadow: var(--shadow-sm);">
+                    <div style="display:flex; justify-content:space-between; align-items: center; margin-bottom:1rem; border-bottom: 1px dashed var(--border-color); padding-bottom:0.5rem;">
+                        <span style="font-weight:800; font-size: 1.1rem; color:var(--text-primary);">السنة الدراسية: ${h.contractYear}</span>
+                        <span style="background: var(--primary-light); color: var(--primary-main); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700;">موثق في: ${new Date(h.signedAt).toLocaleDateString('ar-SA')}</span>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size:0.95rem;">
+                        <div><strong style="color:var(--text-muted)">الصف:</strong> ${h.studentGrade}</div>
+                        <div><strong style="color:var(--text-muted)">المرحلة:</strong> ${h.studentLevel}</div>
+                        <div style="grid-column: 1/-1; margin-top:1rem;">
+                            <strong style="display:block; margin-bottom:0.5rem; color:var(--text-muted);">التوقيع المحفوظ:</strong>
+                            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; display: inline-block;">
+                                ${h.signature ? `<img src="${h.signature}" style="max-height:80px; display:block;">` : '<span style="color:#ef4444">بدون توقيع</span>'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+
+        historyHtml += `</div></div>`;
+
+        // Use the preview modal to show history
+        const previewModal = document.getElementById('contractPreviewModal');
+        const previewBody = document.getElementById('contractPreviewBody');
+        if (previewModal && previewBody) {
+            previewBody.innerHTML = historyHtml;
+            previewModal.classList.add('active');
+            previewModal.style.display = 'flex';
+        }
     }
 };
 
@@ -2862,6 +3083,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 contractYear: document.getElementById('contractYear')?.value || new Date().getFullYear().toString(),
                 contractTemplateId: document.getElementById('contractTemplate')?.value || '',
                 sendMethod: document.getElementById('sendMethod')?.value || 'whatsapp',
+                registrationType: document.getElementById('registrationType')?.value || 'existing',
+                studentNationality: document.getElementById('studentNationality')?.value || 'سعودي',
 
                 // Add the collected custom fields object
                 customFields: customFields,
