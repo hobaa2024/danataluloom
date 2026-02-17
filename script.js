@@ -1323,6 +1323,7 @@ const UI = {
 
             const fixed = this.fixArabic(text); // Apply fixArabic
             if (fixed) contractContent = contractContent.replace(v, fixed);
+            else if (text === '') contractContent = contractContent.replace(v, ''); // Replace with empty if intentionally empty
         });
 
         const stampImage = settings.stampImage || window.SCHOOL_STAMP_IMAGE;
@@ -1330,7 +1331,7 @@ const UI = {
             ? `<div style="text-align:center; position:relative; z-index:5;"><img src="${stampImage}" style="height:110px; width:auto; max-width:150px; opacity:0.85; transform:rotate(-2deg);"></div>`
             : `<div style="width:100px; height:100px; border:3px solid #2563eb; border-radius:50%; display:flex; align-items:center; justify-content:center; position:relative; color:#2563eb; font-weight:900; transform:rotate(-15deg); background:rgba(37,99,235,0.03); margin:0 auto;"><div style="position:absolute; width:90%; height:90%; border:1px solid #2563eb; border-radius:50%;"></div><div style="font-size:11px; text-align:center; max-width:80%; line-height:1.2;">${stampText}</div></div>`;
 
-        const idCardSection = hasIdImage ? `<img src="${student.idImage}" style="max-height:180px; max-width:90%; border:1px solid #ddd; padding:2px; border-radius:4px;">` : '';
+        const idCardSection = hasIdImage ? `<img src="${studentData.idImage || studentData.idCardImage}" style="max-height:180px; max-width:90%; border:1px solid #ddd; padding:2px; border-radius:4px;">` : '';
 
         return `
             <div style="direction:rtl; font-family:'Cairo', sans-serif; background:white; padding:5mm 10mm; width:100%; box-sizing:border-box; color:#1a202c;">

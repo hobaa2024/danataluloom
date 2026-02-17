@@ -377,53 +377,23 @@ class ContractManager {
 
         const pages = pdfDoc.getPages();
 
-        // --- Bulletproof Arabic Engine ---
         const fixArabic = (text) => {
             if (!text) return "";
             try {
                 let str = String(text).trim();
-                // Check for Arabic characters (including presentation forms)
-                const hasArabic = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(str);
+                const hasArabic = /[\u0600-\u06FF]/.test(str);
                 if (!hasArabic) return str;
 
-                // 1. Reshape
+                // 1. Reshape الحروف (مشتبكة)
                 const Reshaper = (typeof ArabicReshaper !== 'undefined' ? ArabicReshaper : window.ArabicReshaper);
-
                 if (Reshaper) {
-                    // Try to find the reshape function
-                    if (typeof Reshaper.convertArabic === 'function') {
-                        str = Reshaper.convertArabic(str);
-                    } else if (typeof Reshaper.reshape === 'function') {
-                        str = Reshaper.reshape(str); // Some versions use reshape()
-                    } else if (Reshaper.ArabicReshaper && typeof Reshaper.ArabicReshaper.convertArabic === 'function') {
-                        str = Reshaper.ArabicReshaper.convertArabic(str);
-                    } else {
-                        console.warn('Start Reshaper found but no convert function!');
-                    }
-                } else {
-                    console.warn('ArabicReshaper library not found! Text will be disconnected.');
+                    if (typeof Reshaper.convertArabic === 'function') str = Reshaper.convertArabic(str);
+                    else if (typeof Reshaper.reshape === 'function') str = Reshaper.reshape(str);
                 }
 
-                // 2. Reverse for RTL
-                let reversed = str.split('').reverse().join('');
-
-                // 3. Fix LTR segments (numbers, english words)
-                // This regex matches sequences of non-Arabic characters that should be LTR
-                // We re-reverse them to restore their order
-                const ltrPattern = /[a-zA-Z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F\s.,:;!?@#$%^&*()_+\-=\[\]{}<>|/\\~`"']+/g;
-
-                reversed = reversed.replace(ltrPattern, function (match) {
-                    // Only re-reverse if it contains letters or numbers, to avoid messing up simple punctuation between Arabic words if any
-                    if (/[a-zA-Z0-9]/.test(match)) {
-                        return match.split('').reverse().join('');
-                    }
-                    // For pure punctuation/spaces, context matters, but usually in RTL text, 
-                    // if it's surrounded by Arabic, it flows RTL. 
-                    // If it's "123", it flows LTR.
-                    return match;
-                });
-
-                return reversed;
+                // 2. DO NOT Reverse for modern PDF readers with Cairo font
+                // Keeping same logic as contract.js for consistency
+                return str;
             } catch (e) {
                 console.error("Arabic fix error:", e);
                 return text;
@@ -440,32 +410,46 @@ class ContractManager {
 
             // Variable Mapping
             // Unified Variable Mapping (from contract.js for consistency)
-            if (target === 'اسمالطالب') text = studentData.studentName || '';
+            if (target === 'اسمالطالب' || target === 'اسمالطالبه') text = studentData.studentName || '';
             else if (target === 'اسموليالامر' || target === 'اسموليالأمر' || target === 'الأب') text = studentData.parentName || '';
             else if (target === 'المسار' || target === 'المسارالتعليمي') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
-            else if (target === 'الصف') text = studentData.studentGrade || '';
-            else if (target === 'المرحلة' || target === 'القسم') text = studentData.studentLevel || '';
-            else if (target === 'السنةالدراسية') text = studentData.customFields?.contractYear || studentData.contractYear || '';
-            else if (target === 'البريدالالكتروني') text = studentData.parentEmail || '';
-            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية')
+            else if (target === 'الصف' || target === 'الصفالدراسي') text = studentData.studentGrade || studentData.customFields?.studentGrade || '';
+            else if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه' || target === 'مرحلة') text = studentData.studentLevel || studentData.customFields?.studentLevel || '';
+            else if (target === 'السنةالدراسية' || target === 'السنهالدراسيه') text = studentData.customFields?.contractYear || studentData.contractYear || '';
+            else if (target === 'البريدالالكتروني' || target === 'الايميل') text = studentData.parentEmail || '';
+            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية' || target === 'هوية' || target === 'الهوية')
                 text = studentData.customFields?.nationalId || studentData.nationalId || '';
-            else if (target === 'هويةوليالامر' || target === 'هويةوليالأمر') text = studentData.customFields?.parentNationalId || studentData.parentNationalId || '';
-            else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'جوال' || target === 'الواتساب')
+            else if (target === 'هويةوليالامر' || target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر') text = studentData.customFields?.parentNationalId || studentData.parentNationalId || '';
+            else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'جوال' || target === 'الواتساب' || target === 'رقمجوالوليالامر')
                 text = studentData.parentWhatsapp || '';
             else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
             else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
-            else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-SA');
+            else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-EG');
             else if (target === 'اليوم') { const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']; text = days[new Date().getDay()]; }
-            else if (target === 'توقيع' || target === 'التوقيع') { text = studentData.signature || studentData.signatureData; isImage = true; }
-            else if (target === 'الختم') {
-                const s = (typeof db !== 'undefined') ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
+            else if (target === 'توقيع' || target === 'التوقيع' || target === 'مكانالتوقيع') { text = studentData.signature || studentData.signatureData; isImage = true; }
+            else if (target === 'الختم' || target === 'ختمالمدرسة' || target === 'مكانالختم') {
+                const s = (typeof db !== 'undefined' && db.getSettings) ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
                 text = s.stampImage || window.SCHOOL_STAMP_IMAGE; isImage = true;
             }
-            else if (target === 'الهوية') { text = studentData.idImage || studentData.idCardImage; isImage = true; }
-            else if (studentData.customFields) {
-                const s = (typeof db !== 'undefined') ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
-                const f = (s.customFields || []).find(f => cleanVar(f.label) === target);
-                if (f) text = studentData.customFields[f.id] || '';
+            else if (target === 'الهوية' || target === 'مكانالهوية') { text = studentData.idImage || studentData.idCardImage || studentData.uploadedFile; isImage = true; }
+            else {
+                // Check custom fields by label (Search in studentData.customFields)
+                if (studentData.customFields) {
+                    try {
+                        const s = (typeof db !== 'undefined' && db.getSettings) ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
+                        const f = (s.customFields || []).find(f => cleanVar(f.label) === target);
+                        if (f) text = studentData.customFields[f.id] || '';
+                        else {
+                            // Direct search in customFields keys (Fallback)
+                            for (let key in studentData.customFields) {
+                                if (cleanVar(key) === target) {
+                                    text = studentData.customFields[key];
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (e) { }
+                }
             }
 
             // If no mapping was found, text will be null, so we skip.

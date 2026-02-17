@@ -1228,10 +1228,12 @@ async function generatePdfFromTemplate(template, studentData) {
         } else {
             if (studentData.customFields) {
                 try {
-                    const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-                    const fieldDef = (settings.customFields || []).find(f => cleanVar(f.label) === target);
-                    if (fieldDef) {
-                        text = studentData.customFields[fieldDef.id] || '';
+                    // direct search in customFields
+                    for (let k in studentData.customFields) { if (cleanVar(k) === target) text = studentData.customFields[k]; }
+                    if (!text) {
+                        const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
+                        const fieldDef = (settings.customFields || []).find(f => cleanVar(f.label) === target);
+                        if (fieldDef) text = studentData.customFields[fieldDef.id] || '';
                     }
                 } catch (e) { }
             }
