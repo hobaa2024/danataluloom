@@ -525,11 +525,15 @@ function showAlreadySignedSimplified(student) {
         card.innerHTML = `
             <div class="success-icon" style="background: var(--success-gradient);">📝</div>
             <h2 class="success-title">تم توقيع العقد مسبقاً</h2>
-            <p class="success-subtitle" style="margin-bottom: 2rem;">تم توقيع هذا العقد وإرساله بنجاح مسبقاً.</p>
+            <p class="success-subtitle" style="margin-bottom: 1rem;">تم توقيع هذا العقد وإرساله بنجاح مسبقاً.</p>
             
-            <div style="background: var(--bg-light); border: 2px solid var(--border-color); border-radius: 16px; padding: 1.5rem; margin-bottom: 2rem; text-align: right;">
-                <div style="display:flex; justify-content:space-between; margin-bottom:10px;"><span style="color:var(--text-muted); font-weight:600;">رقم العقد:</span><span style="font-weight:800; color:var(--text-dark);">${student.contractNo || '---'}</span></div>
-                <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-muted); font-weight:600;">تاريخ التوقيع:</span><span style="font-weight:800; color:var(--text-dark); direction:ltr;">${student.signedAt ? new Date(student.signedAt).toLocaleString('ar-SA') : '---'}</span></div>
+            <div style="background: var(--bg-light); border: 2px solid var(--border-color); border-radius: 16px; padding: 1.5rem; margin-bottom: 2rem; text-align: right; direction: rtl;">
+                <h4 style="margin-top:0; color:var(--primary-color); border-bottom:1px solid #ddd; padding-bottom:8px; margin-bottom:12px;">تفاصيل الطالب</h4>
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--text-muted);">اسم الطالب:</span><span style="font-weight:700;">${student.studentName || '---'}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--text-muted);">المرحلة / الصف:</span><span style="font-weight:700;">${student.studentLevel || '---'} / ${student.studentGrade || '---'}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--text-muted);">رقم الهوية:</span><span style="font-weight:700;">${student.customFields?.nationalId || student.nationalId || '---'}</span></div>
+                <div style="display:flex; justify-content:space-between; border-top:1px solid #eee; pt:8px; mt:8px;"><span style="color:var(--text-muted);">رقم العقد:</span><span style="font-weight:800; color:var(--text-dark);">${student.contractNo || '---'}</span></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-muted);">تاريخ التوقيع:</span><span style="font-weight:800; color:var(--text-dark); direction:ltr;">${student.signedAt ? new Date(student.signedAt).toLocaleDateString('ar-SA') : '---'}</span></div>
             </div>
 
             <div class="success-actions">
@@ -546,7 +550,6 @@ function showAlreadySignedSimplified(student) {
     setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
 }
 
-// NEW: Success message for FRESH signatures (first-time signing)
 function showSuccessAfterSigning(student) {
     document.getElementById('mainContainer').style.display = 'none';
     const successContainer = document.getElementById('successContainer');
@@ -557,11 +560,15 @@ function showSuccessAfterSigning(student) {
         card.innerHTML = `
             <div class="success-icon" style="background: var(--success-gradient);">✓</div>
             <h2 class="success-title">تم التوقيع بنجاح! 🎉</h2>
-            <p class="success-subtitle" style="margin-bottom: 2rem;">شكراً لك! تم توقيع العقد وإرساله بنجاح.</p>
+            <p class="success-subtitle" style="margin-bottom: 1rem;">شكراً لك! تم توقيع العقد وإرساله بنجاح.</p>
             
-            <div style="background: var(--bg-light); border: 2px solid var(--border-color); border-radius: 16px; padding: 1.5rem; margin-bottom: 2rem; text-align: right;">
-                <div style="display:flex; justify-content:space-between; margin-bottom:10px;"><span style="color:var(--text-muted); font-weight:600;">رقم العقد:</span><span style="font-weight:800; color:var(--text-dark);">${student.contractNo || '---'}</span></div>
-                <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-muted); font-weight:600;">تاريخ التوقيع:</span><span style="font-weight:800; color:var(--text-dark); direction:ltr;">${student.signedAt ? new Date(student.signedAt).toLocaleString('ar-SA') : '---'}</span></div>
+            <div style="background: var(--bg-light); border: 2px solid var(--border-color); border-radius: 16px; padding: 1.5rem; margin-bottom: 2rem; text-align: right; direction: rtl;">
+                <h4 style="margin-top:0; color:var(--primary-color); border-bottom:1px solid #ddd; padding-bottom:8px; margin-bottom:12px;">تفاصيل الطالب</h4>
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--text-muted);">اسم الطالب:</span><span style="font-weight:700;">${student.studentName || '---'}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--text-muted);">المرحلة / الصف:</span><span style="font-weight:700;">${student.studentLevel || '---'} / ${student.studentGrade || '---'}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--text-muted);">رقم الهوية:</span><span style="font-weight:700;">${student.customFields?.nationalId || student.nationalId || '---'}</span></div>
+                <div style="display:flex; justify-content:space-between; border-top:1px solid #eee; pt:8px; mt:8px;"><span style="color:var(--text-muted);">رقم العقد:</span><span style="font-weight:800; color:var(--text-dark);">${student.contractNo || '---'}</span></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-muted);">تاريخ التوقيع:</span><span style="font-weight:800; color:var(--text-dark); direction:ltr;">${student.signedAt ? new Date(student.signedAt).toLocaleDateString('ar-SA') : '---'}</span></div>
             </div>
 
             <div class="success-actions">

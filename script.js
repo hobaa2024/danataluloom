@@ -1276,8 +1276,37 @@ const UI = {
                 : template.content;
         }
 
-        const stampImage = settings.stampImage || window.SCHOOL_STAMP_IMAGE;
+        // Unified Variable Mapping for HTML (No reversal for Browser)
+        const getVal = (target) => {
+            let text = "";
+            if (target === 'اسمالطالب' || target === 'اسمالطالبه') text = student.studentName || '';
+            else if (target === 'اسموليالامر') text = student.parentName || '';
+            else if (target === 'المسار') text = student.customFields?.studentTrack || student.studentTrack || '';
+            else if (target === 'الصف' || target === 'الصفالدراسي') text = student.studentGrade || '';
+            else if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه') text = student.studentLevel || '';
+            else if (target === 'السنةالدراسية' || target === 'السنهالدراسيه') text = student.customFields?.contractYear || student.contractYear || '';
+            else if (target === 'البريدالالكتروني' || target === 'الايميل') text = student.parentEmail || '';
+            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية')
+                text = student.customFields?.nationalId || student.nationalId || '';
+            else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر' || target === 'رقمهويةوليالامر')
+                text = student.customFields?.parentNationalId || '';
+            else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'رقمجوالوليالامر' || target === 'رقمواتساب')
+                text = student.parentWhatsapp || '';
+            else if (target === 'العنوان') text = student.address || student.customFields?.address || '';
+            else if (target === 'الجنسية') text = student.nationality || student.customFields?.nationality || '';
+            else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-SA');
+            return text;
+        };
 
+        const cleanVar = (v) => v ? v.replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
+        const foundVars = contractContent.match(/{[^}]+}/g) || [];
+        foundVars.forEach(v => {
+            const target = cleanVar(v);
+            const val = getVal(target);
+            if (val) contractContent = contractContent.replace(v, val);
+        });
+
+        const stampImage = settings.stampImage || window.SCHOOL_STAMP_IMAGE;
         const stampHtml = stampImage
             ? `<div style="text-align:center; position:relative; z-index:5;"><img src="${stampImage}" style="height:110px; width:auto; max-width:150px; opacity:0.85; transform:rotate(-2deg);"></div>`
             : `<div style="width:100px; height:100px; border:3px solid #2563eb; border-radius:50%; display:flex; align-items:center; justify-content:center; position:relative; color:#2563eb; font-weight:900; transform:rotate(-15deg); background:rgba(37,99,235,0.03); margin:0 auto;"><div style="position:absolute; width:90%; height:90%; border:1px solid #2563eb; border-radius:50%;"></div><div style="font-size:11px; text-align:center; max-width:80%; line-height:1.2;">${stampText}</div></div>`;
@@ -1286,48 +1315,44 @@ const UI = {
 
         return `
             <div style="direction:rtl; font-family:'Cairo', sans-serif; background:white; padding:5mm 10mm; width:100%; box-sizing:border-box; color:#1a202c;">
-                <div id="dynamicCustomFieldsContainer" class="form-row" style="flex-wrap: wrap; gap: 1rem;">
-                    <!-- Dynamic fields will be inserted here -->
-                </div>    <table style="width:100%; border-bottom:2px solid #1e3a8a; margin-bottom:40px; padding-bottom:20px;">
-                            <tr>
-                                <td style="text-align:right; width:33%;">
-                                    <p style="font-weight:bold; margin:0; font-size:16px;">${settings.schoolName || 'مدارس دانة العلوم'}</p>
-                                    <p style="font-size:12px; margin:5px 0 0;">جوال: ${schoolPhone}</p>
-                                </td>
-                                <td style="text-align:center; width:34%;"><img src="${schoolLogo}" style="height:80px; width:auto;"></td>
-                                <td style="text-align:left; width:33%;">
-                                    <p style="font-weight:bold; color:#1e3a8a; font-size:20px; margin:0;">${contractTitle}</p>
-                                    <p style="font-family:monospace; font-size:14px; margin:5px 0 0; color:#718096;">${contractNo}</p>
-                                </td>
-                            </tr>
-                        </table>
+                <table style="width:100%; border-bottom:2px solid #1e3a8a; margin-bottom:40px; padding-bottom:20px;">
+                    <tr>
+                        <td style="text-align:right; width:33%;">
+                            <p style="font-weight:bold; margin:0; font-size:16px;">${settings.schoolName || 'مدارس دانة العلوم'}</p>
+                            <p style="font-size:12px; margin:5px 0 0;">جوال: ${schoolPhone}</p>
+                        </td>
+                        <td style="text-align:center; width:34%;"><img src="${schoolLogo}" style="height:80px; width:auto;"></td>
+                        <td style="text-align:left; width:33%;">
+                            <p style="font-weight:bold; color:#1e3a8a; font-size:20px; margin:0;">${contractTitle}</p>
+                            <p style="font-family:monospace; font-size:14px; margin:5px 0 0; color:#718096;">${contractNo}</p>
+                        </td>
+                    </tr>
+                </table>
 
-                        <!-- Contract Content -->
-                        <div style="font-size:14px; line-height:1.8; margin-bottom:30px; text-align:justify; white-space:pre-wrap;">${contractContent}</div>
+                <!-- Contract Content -->
+                <div style="font-size:14px; line-height:1.8; margin-bottom:30px; text-align:justify; white-space:pre-wrap;">${contractContent}</div>
 
-                        <!-- Signatures & ID Card (Integrated) -->
-                        <div style="page-break-inside: avoid; border: 1px solid #edf2f7; border-radius: 12px; padding: 15px; background: #fff; margin-top: 20px;">
-                            <table style="width:100%;">
-                                <tr>
-                                    <td style="text-align:center; width:50%; vertical-align:bottom;">
-                                        <p style="font-weight:bold; margin-bottom:10px; color:#2d3748; font-size:13px;">الختم والاعتماد</p>
-                                        ${stampHtml}
-                                    </td>
-                                    <td style="text-align:center; width:50%; vertical-align:bottom;">
-                                        <p style="font-weight:bold; margin-bottom:10px; color:#2d3748; font-size:13px;">توقيع ولي الأمر</p>
-                                        ${hasSignature ? `<img src="${student.signature}" style="max-height:80px; max-width:200px;">` : '<div style="height:80px; display:flex; align-items:center; justify-content:center; color:#cbd5e0;">................</div>'}
-                                    </td>
-                                </tr>
-                            </table>
-
-                            ${idCardSection ? `
-                            <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center;">
-                                <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">صورة هوية ولي الأمر</p>
-                                ${idCardSection}
-                            </div>` : ''}
-                        </div>
-                    </div>
-                </div>`;
+                <!-- Signatures & ID Card -->
+                <div style="page-break-inside: avoid; border: 1px solid #edf2f7; border-radius: 12px; padding: 15px; background: #fff; margin-top: 20px;">
+                    <table style="width:100%;">
+                        <tr>
+                            <td style="text-align:center; width:50%; vertical-align:bottom;">
+                                <p style="font-weight:bold; margin-bottom:10px; color:#2d3748; font-size:13px;">الختم والاعتماد</p>
+                                ${stampHtml}
+                            </td>
+                            <td style="text-align:center; width:50%; vertical-align:bottom;">
+                                <p style="font-weight:bold; margin-bottom:10px; color:#2d3748; font-size:13px;">توقيع ولي الأمر</p>
+                                ${hasSignature ? `<img src="${student.signature}" style="max-height:80px; max-width:200px;">` : '<div style="height:80px; display:flex; align-items:center; justify-content:center; color:#cbd5e0;">................</div>'}
+                            </td>
+                        </tr>
+                    </table>
+                    ${idCardSection ? `
+                    <div style="margin-top:15px; border-top:1px dashed #e2e8f0; padding-top:10px; text-align:center;">
+                        <p style="margin:0 0 5px; font-weight:bold; font-size:12px;">صورة هوية ولي الأمر</p>
+                        ${idCardSection}
+                    </div>` : ''}
+                </div>
+            </div>`;
     },
 
     async previewContract(id) {
