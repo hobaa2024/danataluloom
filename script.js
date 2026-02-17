@@ -1247,17 +1247,37 @@ const UI = {
         });
     },
 
-    getContractSummaryHTML(student) {
+    // Advanced Arabic Text Processor (Matching contract.js)
+    fixArabic: (text) => {
+        if (!text) return "";
+        try {
+            let str = String(text).trim();
+            const hasArabic = /[\u0600-\u06FF]/.test(str);
+            if (!hasArabic) return str;
+
+            const Reshaper = (typeof ArabicReshaper !== 'undefined' ? ArabicReshaper : window.ArabicReshaper);
+            if (Reshaper) {
+                if (typeof Reshaper.convertArabic === 'function') str = Reshaper.convertArabic(str);
+                else if (typeof Reshaper.reshape === 'function') str = Reshaper.reshape(str);
+            }
+            return str; // NO REVERSAL
+        } catch (e) {
+            console.error("Arabic fix error:", e);
+            return text;
+        }
+    },
+
+    getContractSummaryHTML(studentData) { // Renamed student to studentData for clarity with new mapping
         const settings = db.getSettings();
         const stampText = settings.schoolStampText || 'الإدارة';
         const schoolLogo = settings.schoolLogo || 'assets/logo.png';
         const schoolPhone = settings.schoolPhone || '---';
-        const hasSignature = !!student.signature;
-        const hasIdImage = !!student.idImage;
-        const contractNo = student.contractNo || 'CON-ADMIN';
+        const hasSignature = !!studentData.signature;
+        const hasIdImage = !!studentData.idImage;
+        const contractNo = studentData.contractNo || 'CON-ADMIN';
 
         // Fetch Template Content
-        const templateId = student.contractTemplateId;
+        const templateId = studentData.contractTemplateId;
         let template = null;
         if (typeof contractMgr !== 'undefined') {
             template = contractMgr.getContract(templateId) || contractMgr.getDefaultContract();
@@ -1272,38 +1292,37 @@ const UI = {
         if (template) {
             contractTitle = template.title;
             contractContent = (typeof contractMgr !== 'undefined')
-                ? contractMgr.replaceVariables(template.content, student)
+                ? contractMgr.replaceVariables(template.content, studentData) // Use studentData here
                 : template.content;
         }
 
         // Unified Variable Mapping for HTML (No reversal for Browser)
-        const getVal = (target) => {
-            let text = "";
-            if (target === 'اسمالطالب' || target === 'اسمالطالبه') text = student.studentName || '';
-            else if (target === 'اسموليالامر') text = student.parentName || '';
-            else if (target === 'المسار') text = student.customFields?.studentTrack || student.studentTrack || '';
-            else if (target === 'الصف' || target === 'الصفالدراسي') text = student.studentGrade || '';
-            else if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه') text = student.studentLevel || '';
-            else if (target === 'السنةالدراسية' || target === 'السنهالدراسيه') text = student.customFields?.contractYear || student.contractYear || '';
-            else if (target === 'البريدالالكتروني' || target === 'الايميل') text = student.parentEmail || '';
-            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية')
-                text = student.customFields?.nationalId || student.nationalId || '';
-            else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر' || target === 'رقمهويةوليالامر')
-                text = student.customFields?.parentNationalId || '';
-            else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'رقمجوالوليالامر' || target === 'رقمواتساب')
-                text = student.parentWhatsapp || '';
-            else if (target === 'العنوان') text = student.address || student.customFields?.address || '';
-            else if (target === 'الجنسية') text = student.nationality || student.customFields?.nationality || '';
-            else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-SA');
-            return text;
-        };
-
         const cleanVar = (v) => v ? v.replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
         const foundVars = contractContent.match(/{[^}]+}/g) || [];
         foundVars.forEach(v => {
             const target = cleanVar(v);
-            const val = getVal(target);
-            if (val) contractContent = contractContent.replace(v, val);
+            let text = "";
+
+            // Comprehensive Field Mapping
+            if (target === 'اسمالطالب' || target === 'اسمالطالبه') text = studentData.studentName || '';
+            else if (target === 'اسموليالامر') text = studentData.parentName || '';
+            else if (target === 'المسار') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
+            else if (target === 'الصف' || target === 'الصفالدراسي') text = studentData.studentGrade || studentData.customFields?.studentGrade || '';
+            else if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه' || target === 'مرحلة') text = studentData.studentLevel || studentData.customFields?.studentLevel || '';
+            else if (target === 'السنةالدراسية' || target === 'السنهالدراسيه') text = studentData.customFields?.contractYear || studentData.contractYear || '';
+            else if (target === 'البريدالالكتروني' || target === 'الايميل') text = studentData.parentEmail || '';
+            else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية' || target === 'هوية' || target === 'الهوية')
+                text = studentData.customFields?.nationalId || studentData.nationalId || '';
+            else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر' || target === 'رقمهويةوليالامر')
+                text = studentData.customFields?.parentNationalId || '';
+            else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'رقمجوالوليالامر' || target === 'رقمواتساب')
+                text = studentData.parentWhatsapp || '';
+            else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
+            else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
+            else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-EG');
+
+            const fixed = this.fixArabic(text); // Apply fixArabic
+            if (fixed) contractContent = contractContent.replace(v, fixed);
         });
 
         const stampImage = settings.stampImage || window.SCHOOL_STAMP_IMAGE;

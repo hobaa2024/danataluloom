@@ -1160,30 +1160,23 @@ async function generatePdfFromTemplate(template, studentData) {
     const pages = pdfDoc.getPages();
 
     // Advanced Arabic Text Processor
-    const fixArabic = (text, isForPdf = true) => {
+    const fixArabic = (text) => {
         if (!text) return "";
         try {
             let str = String(text).trim();
             const hasArabic = /[\u0600-\u06FF]/.test(str);
             if (!hasArabic) return str;
 
-            // 1. Reshape الحروف
+            // 1. Reshape الحروف (مشتبكة)
             const Reshaper = (typeof ArabicReshaper !== 'undefined' ? ArabicReshaper : window.ArabicReshaper);
             if (Reshaper) {
                 if (typeof Reshaper.convertArabic === 'function') str = Reshaper.convertArabic(str);
                 else if (typeof Reshaper.reshape === 'function') str = Reshaper.reshape(str);
             }
 
-            // 2. Reverse ONLY for PDF download, keep natural for Browser Preview
-            if (!isForPdf) return str;
-
-            let reversed = str.split('').reverse().join('');
-            const ltrPattern = /([\d\/\-\.\+a-zA-Z]+)/g;
-            reversed = reversed.replace(ltrPattern, function (match) {
-                return match.split('').reverse().join('');
-            });
-
-            return reversed;
+            // 2. DO NOT Reverse for modern PDF readers with Cairo font
+            // The browser preview worked because it didn't reverse. We match that here.
+            return str;
         } catch (e) {
             console.error("Arabic fix error:", e);
             return text;
@@ -1194,19 +1187,20 @@ async function generatePdfFromTemplate(template, studentData) {
 
     for (const field of template.pdfFields) {
         const placeholder = field.variable;
-        let text = null;
         let isImage = false;
+        // Match variables (Case insensitive and stripped)
         const target = cleanVar(placeholder);
+        let text = "";
 
-        // Unified Variable Mapping
+        // Comprehensive Field Mapping
         if (target === 'اسمالطالب' || target === 'اسمالطالبه') text = studentData.studentName || '';
         else if (target === 'اسموليالامر') text = studentData.parentName || '';
         else if (target === 'المسار') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
-        else if (target === 'الصف' || target === 'الصفالدراسي') text = studentData.studentGrade || '';
-        else if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه') text = studentData.studentLevel || '';
+        else if (target === 'الصف' || target === 'الصفالدراسي') text = studentData.studentGrade || studentData.customFields?.studentGrade || '';
+        else if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه' || target === 'مرحلة') text = studentData.studentLevel || studentData.customFields?.studentLevel || '';
         else if (target === 'السنةالدراسية' || target === 'السنهالدراسيه') text = studentData.customFields?.contractYear || studentData.contractYear || '';
         else if (target === 'البريدالالكتروني' || target === 'الايميل') text = studentData.parentEmail || '';
-        else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية')
+        else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية' || target === 'هوية' || target === 'الهوية')
             text = studentData.customFields?.nationalId || studentData.nationalId || '';
         else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر' || target === 'رقمهويةوليالامر')
             text = studentData.customFields?.parentNationalId || '';
@@ -1214,7 +1208,7 @@ async function generatePdfFromTemplate(template, studentData) {
             text = studentData.parentWhatsapp || '';
         else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
         else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
-        else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-SA');
+        else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-EG'); // Specific Arabic Format
         else if (target === 'اليوم') {
             const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
             text = days[new Date().getDay()];
