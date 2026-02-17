@@ -2374,11 +2374,16 @@ ${link}
             const exportData = students.map(s => ({
                 'الرقم التسلسلي (ID)': s.id,
                 'اسم الطالب': s.studentName,
+                'هوية الطالب': s.nationalId || s.customFields?.nationalId || '-',
                 'المرحلة': s.studentLevel,
                 'الصف': s.studentGrade,
+                'المسار': s.studentTrack || '-',
                 'اسم ولي الأمر': s.parentName,
+                'هوية ولي الأمر': s.parentNationalId || s.customFields?.parentNationalId || '-',
                 'البريد الإلكتروني': s.parentEmail,
                 'رقم الواتساب': s.parentWhatsapp,
+                'الجنسية': s.nationality || s.customFields?.nationality || '-',
+                'نوع التسجيل': s.registrationType === 'mustajid' ? 'منتظم مستجد' : 'طالب قديم',
                 'حالة العقد': this.getStatusText(s.contractStatus),
                 'وقت التوقيع': s.signedAt ? new Date(s.signedAt).toLocaleString('ar-SA') : '-',
                 'تاريخ الإضافة': s.createdAt ? new Date(s.createdAt).toLocaleDateString('ar-SA') : '-',
@@ -2562,14 +2567,21 @@ ${link}
                         parentWhatsapp: String(row['رقم الواتساب'] || row['الجوال'] || row['WhatsApp'] || ''),
                         studentLevel: row['المرحلة'] || row['Level'] || '',
                         studentGrade: row['الصف'] || row['Grade'] || '',
-                        nationalId: String(row['رقم الهوية'] || row['الهوية'] || row['سجل'] || row['Id'] || ''),
+                        studentTrack: row['المسار'] || row['Track'] || '',
+                        nationalId: String(row['هوية الطالب'] || row['الهوية'] || row['سجل'] || row['Id'] || ''),
+                        parentNationalId: String(row['هوية ولي الأمر'] || row['ParentID'] || ''),
                         contractYear: row['السنة الدراسية'] || row['السنة'] || row['Year'] || new Date().getFullYear().toString(),
                         sendMethod: row['طريقة الإرسال'] || row['SendMethod'] || 'whatsapp',
-                        registrationType: row['نوع التسجيل'] || row['RegistrationType'] || 'existing',
-                        studentNationality: row['الجنسية'] || row['Nationality'] || 'سعودي',
+                        registrationType: row['نوع التسجيل'] === 'طالب قديم' ? 'existing' : 'mustajid', // Default to mustajid (New Student)
+                        nationality: row['الجنسية'] || row['Nationality'] || '',
                         contractTemplateId: assignedContractId,
                         customFields: customFields
                     };
+                    // Ensure consistency
+                    student.customFields.registrationType = student.registrationType;
+                    student.customFields.nationalId = student.nationalId;
+                    student.customFields.parentNationalId = student.parentNationalId;
+                    student.customFields.nationality = student.nationality;
 
                     if (student.studentName) {
                         db.saveStudent(student);
@@ -2756,12 +2768,16 @@ ${link}
             const settings = db.getSettings();
             const rowData = {
                 'اسم الطالب': 'محمد أحمد علي',
-                'المسار': 'مسار ثنائي اللغة', // عمود المسار أصبح أساسياً
+                'هوية الطالب': '1234567890',
+                'المسار': 'مسار ثنائي اللغة',
                 'المرحلة': 'الابتدائية',
                 'الصف': 'الصف الأول',
                 'اسم ولي الأمر': 'أحمد علي',
+                'هوية ولي الأمر': '1020304050',
                 'البريد الإلكتروني': 'parent@example.com',
                 'رقم الواتساب': '966500000000',
+                'الجنسية': 'سعودي',
+                'نوع التسجيل': 'منتظم مستجد', // أو 'طالب قديم'
                 'طريقة الإرسال': 'whatsapp',
                 'السنة الدراسية': '2024-2025'
             };
@@ -2783,7 +2799,7 @@ ${link}
 
             worksheet['!dir'] = 'rtl';
             const standardCols = [
-                { wch: 25 }, { wch: 20 }, { wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
+                { wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
             ];
             worksheet['!cols'] = [...standardCols, ...customHeaders];
 

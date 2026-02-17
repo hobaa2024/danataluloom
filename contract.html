@@ -900,11 +900,12 @@
 
             <!-- Extra Documents (For New Students Only) -->
             <div class="upload-group" id="extraDocsSection" style="margin-bottom: 2rem; display: none;">
-                <h4 style="margin-bottom: 0.8rem; color: var(--text-dark);">2. رفع المستندات (شهادة ميلاد - إقامة - هوية
-                    - جواز سفر .....الخ) <span style="color:red">*</span></h4>
+                <h4 style="margin-bottom: 0.8rem; color: var(--text-dark);">2. رفع المستندات الإضافية (شهادة ميلاد -
+                    جواز سفر - تطعيمات...الخ) <span style="color:red">*</span></h4>
                 <div class="upload-area" id="extraDocsArea">
                     <div class="upload-icon">📂</div>
-                    <div class="upload-text">يمكنك اختيار صورة واحدة أو أكثر للمستندات المطلوبة</div>
+                    <div class="upload-text">يمكنك اختيار صورة واحدة أو أكثر للمستندات المطلوبة (للطلاب المستجدين فقط)
+                    </div>
                     <input type="file" id="extraDocsUpload" accept="image/*" multiple style="display: none;">
                     <div class="upload-buttons">
                         <button class="btn btn-primary" onclick="document.getElementById('extraDocsUpload').click()">
@@ -917,103 +918,100 @@
                     <!-- Multiple previews will appear here -->
                 </div>
             </div>
-        </div>
-
-        <!-- Step 3: Signature -->
-        <div class="section-card" style="animation-delay: 0.3s">
-            <div class="section-header">
-                <div class="section-icon">✍️</div>
-                <div>
-                    <div class="section-title">التوقيع والموافقة</div>
-                    <div class="section-subtitle">وقّع بإصبعك أو بالقلم على الشاشة</div>
+            <div class="section-card" style="animation-delay: 0.3s">
+                <div class="section-header">
+                    <div class="section-icon">✍️</div>
+                    <div>
+                        <div class="section-title">التوقيع والموافقة</div>
+                        <div class="section-subtitle">وقّع بإصبعك أو بالقلم على الشاشة</div>
+                    </div>
                 </div>
-            </div>
 
-            <div class="signature-container">
-                <canvas id="signatureCanvas"></canvas>
-                <div class="signature-controls">
-                    <button class="btn btn-secondary" id="clearSignature">
-                        🗑️ مسح التوقيع
-                    </button>
-                    <div class="checkbox-wrapper">
-                        <input type="checkbox" id="agreeTerms">
-                        <label for="agreeTerms">أوافق على جميع شروط العقد</label>
+                <div class="signature-container">
+                    <canvas id="signatureCanvas"></canvas>
+                    <div class="signature-controls">
+                        <button class="btn btn-secondary" id="clearSignature">
+                            🗑️ مسح التوقيع
+                        </button>
+                        <div class="checkbox-wrapper">
+                            <input type="checkbox" id="agreeTerms">
+                            <label for="agreeTerms">أوافق على جميع شروط العقد</label>
+                        </div>
                     </div>
                 </div>
             </div>
+
+            <!-- Submit Button -->
+            <button class="btn btn-success btn-large" id="submitContract" disabled>
+                <span id="submitText">إرسال العقد الآن</span>
+                <span class="btn-icon">✈️</span>
+            </button>
         </div>
 
-        <!-- Submit Button -->
-        <button class="btn btn-success btn-large" id="submitContract" disabled>
-            <span id="submitText">إرسال العقد الآن</span>
-            <span class="btn-icon">✈️</span>
-        </button>
-    </div>
+        <!-- Success Page -->
+        <div class="success-container" id="successContainer">
+            <div class="success-card">
+                <div class="success-icon">✓</div>
+                <h1 class="success-title">تم التوقيع بنجاح! 🎉</h1>
+                <p class="success-subtitle">شكراً لك! تم توقيع العقد وإرساله بنجاح</p>
 
-    <!-- Success Page -->
-    <div class="success-container" id="successContainer">
-        <div class="success-card">
-            <div class="success-icon">✓</div>
-            <h1 class="success-title">تم التوقيع بنجاح! 🎉</h1>
-            <p class="success-subtitle">شكراً لك! تم توقيع العقد وإرساله بنجاح</p>
+                <div class="contract-info">
+                    <div class="info-row">
+                        <div class="info-label">رقم العقد</div>
+                        <div class="info-value" id="contractNumber">-</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">تاريخ التوقيع</div>
+                        <div class="info-value" id="submitDate">-</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">الحالة</div>
+                        <div class="info-value" style="color: var(--success-color);">مكتمل ✓</div>
+                    </div>
+                </div>
 
-            <div class="contract-info">
-                <div class="info-row">
-                    <div class="info-label">رقم العقد</div>
-                    <div class="info-value" id="contractNumber">-</div>
+                <div class="success-actions" id="successActions">
+                    <!-- Will be filled by JavaScript -->
                 </div>
-                <div class="info-row">
-                    <div class="info-label">تاريخ التوقيع</div>
-                    <div class="info-value" id="submitDate">-</div>
-                </div>
-                <div class="info-row">
-                    <div class="info-label">الحالة</div>
-                    <div class="info-value" style="color: var(--success-color);">مكتمل ✓</div>
-                </div>
-            </div>
-
-            <div class="success-actions" id="successActions">
-                <!-- Will be filled by JavaScript -->
             </div>
         </div>
-    </div>
 
-    <!-- Scripts -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-    <script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
-    <script>
-        if (typeof PDFLib === 'undefined') {
-            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"><\/script>');
-        }
-    </script>
-    <script src="font-data.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js"></script>
-    <script>
-        // Wait a moment for the library to initialize, then check
-        setTimeout(() => {
-            if (typeof ArabicReshaper === 'undefined' && typeof window.ArabicReshaper === 'undefined') {
-                console.warn("Primary ArabicReshaper failed to load, trying fallback...");
-                const fallback = document.createElement('script');
-                fallback.src = 'https://unpkg.com/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js';
-                fallback.onerror = () => console.error("Both ArabicReshaper sources failed. Arabic text in PDF may not display correctly.");
-                document.head.appendChild(fallback);
-            } else {
-                console.log("✅ ArabicReshaper loaded successfully");
+        <!-- Scripts -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+        <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+        <script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
+        <script>
+            if (typeof PDFLib === 'undefined') {
+                document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"><\/script>');
             }
-        }, 500);
-    </script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-    <script src="firebase-config.js"></script>
-    <script>
-        // Force cache invalidation - load contract.js with timestamp
-        const script = document.createElement('script');
-        script.src = 'contract.js?t=' + Date.now();
-        document.body.appendChild(script);
-    </script>
+        </script>
+        <script src="font-data.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js"></script>
+        <script>
+            // Wait a moment for the library to initialize, then check
+            setTimeout(() => {
+                if (typeof ArabicReshaper === 'undefined' && typeof window.ArabicReshaper === 'undefined') {
+                    console.warn("Primary ArabicReshaper failed to load, trying fallback...");
+                    const fallback = document.createElement('script');
+                    fallback.src = 'https://unpkg.com/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js';
+                    fallback.onerror = () => console.error("Both ArabicReshaper sources failed. Arabic text in PDF may not display correctly.");
+                    document.head.appendChild(fallback);
+                } else {
+                    console.log("✅ ArabicReshaper loaded successfully");
+                }
+            }, 500);
+        </script>
+        <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+        <script src="firebase-config.js"></script>
+        <script>
+            // Force cache invalidation - load contract.js with timestamp
+            const script = document.createElement('script');
+            script.src = 'contract.js?t=' + Date.now();
+            document.body.appendChild(script);
+        </script>
 </body>
 
 </html>

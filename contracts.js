@@ -497,25 +497,48 @@ class ContractManager {
             }
         }
         // --- APPEND EXTRA PAGES FOR DOCUMENTS ---
-        const docsToAppend = [
-            { data: studentData.idImage || studentData.idCardImage || studentData.uploadedFile, label: 'الهوية' }
-        ];
+        // --- APPEND EXTRA PAGES FOR DOCUMENTS ---
+        // 1. Identity Document
+        const docsToAppend = [];
+        if (studentData.idImage || studentData.idCardImage || studentData.uploadedFile) {
+            docsToAppend.push({
+                data: studentData.idImage || studentData.idCardImage || studentData.uploadedFile,
+                label: 'صورة الهوية'
+            });
+        }
 
-        // Add all extra docs
-        let extras = [...(studentData.extraDocs || [])];
+        // 2. Extra Documents
+        let extras = [];
+        if (studentData.extraDocs && Array.isArray(studentData.extraDocs)) {
+            extras = [...studentData.extraDocs];
+        }
+
         // Fallback for older data format
         if (studentData.birthCertImage && !extras.includes(studentData.birthCertImage)) extras.push(studentData.birthCertImage);
         if (studentData.passportImage && !extras.includes(studentData.passportImage)) extras.push(studentData.passportImage);
 
         extras.forEach((data, idx) => {
-            docsToAppend.push({ data: data, label: `مستند إضافي ${idx + 1}` });
+            if (data) docsToAppend.push({ data: data, label: `مستند إضافي ${idx + 1}` });
         });
+
+        const font = customFont || await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
 
         for (const doc of docsToAppend) {
             if (doc.data) {
                 try {
                     const page = pdfDoc.addPage([595, 842]); // A4 Size
+                    const { width, height } = page.getSize();
                     let b64 = doc.data;
+
+                    // Header for the page
+                    page.drawText(fixArabic(doc.label), {
+                        x: width / 2 - 50, // Approximate center
+                        y: height - 50,
+                        size: 20,
+                        font: font,
+                        color: PDFLib.rgb(0, 0, 0),
+                    });
+
                     if (b64.includes(',')) b64 = b64.split(',')[1];
 
                     let img;
@@ -527,10 +550,10 @@ class ContractManager {
                     }
 
                     if (img) {
-                        const dims = img.scaleToFit(540, 780);
+                        const dims = img.scaleToFit(500, 700);
                         page.drawImage(img, {
-                            x: (595 - dims.width) / 2,
-                            y: (842 - dims.height) / 2,
+                            x: (width - dims.width) / 2,
+                            y: (height - dims.height) / 2, // Center vertically
                             width: dims.width,
                             height: dims.height
                         });

@@ -191,17 +191,7 @@ function updateProgress() {
         step2.classList.add('active');
     }
 
-    // Check if new student requirements are met
-    const isNew = currentStudent?.registrationType === 'mustajid';
-    const isNotSaudi = currentStudent?.nationality !== 'سعودي';
-    const needsBirthCert = isNew;
-    const needsPassport = isNew && isNotSaudi;
-
-    let extraFilesReady = true;
-    if (needsBirthCert && !birthCertFile) extraFilesReady = false;
-    if (needsPassport && !passportFile) extraFilesReady = false;
-
-    if (uploadedFile && hasDrawn && (document.getElementById('agreeTerms')?.checked) && extraFilesReady) {
+    if (uploadedFile && hasDrawn && (document.getElementById('agreeTerms')?.checked)) {
         step3.classList.add('completed');
         completedSteps++;
     } else if (uploadedFile) {
@@ -599,7 +589,7 @@ function showAlreadySignedSimplified(student) {
 
     if (student.signature) signatureData = student.signature;
     if (student.idImage) uploadedFile = student.idImage;
-    if (student.extraDocs) extraDocs = student.extraDocs;
+    if (student.extraDocs) extraDocs = student.extraDocs; // Load extra docs if available
     currentStudent = student;
 
     setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
@@ -635,7 +625,7 @@ function showSuccessAfterSigning(student) {
 
     if (student.signature) signatureData = student.signature;
     if (student.idImage) uploadedFile = student.idImage;
-    if (student.extraDocs) extraDocs = student.extraDocs;
+    if (student.extraDocs) extraDocs = student.extraDocs; // Load extra docs if available
     currentStudent = student;
 
     setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
@@ -658,23 +648,17 @@ function getContractPdfHtml(studentName, contractNo) {
     tempDiv.querySelectorAll('h3').forEach(el => el.remove());
     safeContractText = tempDiv.innerHTML.replace(/\n/g, '<br>');
 
-    const idCardSection = uploadedFile ? `
-        <div style="margin-top:25px; border-top:1px dashed #ccc; padding-top:20px; text-align:center; page-break-inside:avoid;">
-            <p style="margin:0 0 10px; font-weight:bold;">صورة هوية ولي الأمر</p>
-            <img src="${uploadedFile}" style="max-height:250px; max-width:90%; border:1px solid #ddd; padding:5px; border-radius:4px;">
-        </div>` : '';
-
     let docsHtml = '';
-    let docsToShow = [...(extraDocs || [])];
+    let allExtraDocs = [...extraDocs]; // Use the global extraDocs
     if (currentStudent?.extraDocs) {
-        currentStudent.extraDocs.forEach(d => { if (!docsToShow.includes(d)) docsToShow.push(d); });
+        currentStudent.extraDocs.forEach(d => { if (!allExtraDocs.includes(d)) allExtraDocs.push(d); });
     }
     // Fallback for old fields
-    if (currentStudent?.birthCertImage && !docsToShow.includes(currentStudent.birthCertImage)) docsToShow.push(currentStudent.birthCertImage);
-    if (currentStudent?.passportImage && !docsToShow.includes(currentStudent.passportImage)) docsToShow.push(currentStudent.passportImage);
+    if (currentStudent?.birthCertImage && !allExtraDocs.includes(currentStudent.birthCertImage)) allExtraDocs.push(currentStudent.birthCertImage);
+    if (currentStudent?.passportImage && !allExtraDocs.includes(currentStudent.passportImage)) allExtraDocs.push(currentStudent.passportImage);
 
-    if (docsToShow.length > 0) {
-        docsToShow.forEach((doc, idx) => {
+    if (allExtraDocs.length > 0) {
+        allExtraDocs.forEach((doc, idx) => {
             docsHtml += `
             <div style="margin-top:25px; border-top:1px dashed #ccc; padding-top:20px; text-align:center; page-break-before:always;">
                 <p style="margin:0 0 10px; font-weight:bold;">مستند إضافي (${idx + 1})</p>
@@ -683,6 +667,7 @@ function getContractPdfHtml(studentName, contractNo) {
         });
     }
 
+    // Extra docs support restored
     return `
         <div style="direction:rtl; font-family:'Cairo', sans-serif; background:white; padding:5mm 10mm; width:100%; box-sizing:border-box; color:#1a202c;">
             <div style="background:white; position:relative;">
@@ -975,8 +960,6 @@ function renderExtraDocs() {
             <img src="${doc}" style="width:100%; height:100px; object-fit:cover; border-radius:8px; border:1px solid #ddd;">
         </div>
     `).join('');
-
-    // Auto-hide upload area if too many files (optional, but keep it simple)
 }
 
 function removeExtraDoc(idx) {
@@ -994,7 +977,6 @@ function validateForm() {
 
     // Check extra files if mustajid
     const isNew = currentStudent?.registrationType === 'mustajid';
-    const isNotSaudi = currentStudent?.nationality !== 'سعودي';
 
     let docsOk = !!uploadedFile;
     if (isNew) {
@@ -1446,11 +1428,16 @@ async function generatePdfFromTemplate(template, studentData) {
         }
     }
     // --- APPEND EXTRA PAGES FOR DOCUMENTS ---
-    const docsToAppend = [
-        { data: studentData.idImage || uploadedFile, label: 'الهوية' }
-    ];
+    // 1. Identity Document
+    const docsToAppend = [];
+    if (studentData.idImage || uploadedFile) {
+        docsToAppend.push({
+            data: studentData.idImage || uploadedFile,
+            label: 'صورة الهوية'
+        });
+    }
 
-    // Add all extra docs
+    // 2. Extra Documents
     let extras = [...(extraDocs || [])];
     if (studentData.extraDocs) {
         studentData.extraDocs.forEach(d => { if (!extras.includes(d)) extras.push(d); });
@@ -1460,14 +1447,28 @@ async function generatePdfFromTemplate(template, studentData) {
     if (studentData.passportImage && !extras.includes(studentData.passportImage)) extras.push(studentData.passportImage);
 
     extras.forEach((data, idx) => {
-        docsToAppend.push({ data: data, label: `مستند إضافي ${idx + 1}` });
+        if (data) docsToAppend.push({ data: data, label: `مستند إضافي ${idx + 1}` });
     });
 
     for (const doc of docsToAppend) {
         if (doc.data) {
             try {
                 const page = pdfDoc.addPage([595, 842]); // A4 Size
+                const { width, height } = page.getSize();
                 let b64 = doc.data;
+
+                // Header for the page
+                try {
+                    const font = customFont || await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+                    page.drawText(fixArabic(doc.label), {
+                        x: width / 2 - 50,
+                        y: height - 50,
+                        size: 20,
+                        font: font,
+                        color: PDFLib.rgb(0, 0, 0),
+                    });
+                } catch (eText) { console.warn("Text draw failed on extra page", eText); }
+
                 if (b64.includes(',')) b64 = b64.split(',')[1];
 
                 let img;
@@ -1475,18 +1476,19 @@ async function generatePdfFromTemplate(template, studentData) {
                 else img = await pdfDoc.embedJpg(b64);
 
                 if (img) {
-                    const dims = img.scaleToFit(540, 780);
+                    const dims = img.scaleToFit(500, 700);
                     page.drawImage(img, {
-                        x: (595 - dims.width) / 2,
-                        y: (842 - dims.height) / 2,
+                        x: (width - dims.width) / 2,
+                        y: (height - dims.height) / 2,
                         width: dims.width,
                         height: dims.height
                     });
                 }
-            } catch (e) { console.warn("Failed to append PDF page:", doc.label, e); }
+            } catch (e) {
+                console.error(`Failed to embed ${doc.label}:`, e);
+            }
         }
     }
-
     return await pdfDoc.save();
 }
 
