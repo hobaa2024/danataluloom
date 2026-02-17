@@ -1457,16 +1457,14 @@ const UI = {
                     margin: 10,
                     filename: `عقد-${student.studentName}.pdf`,
                     image: { type: 'jpeg', quality: 0.98 },
-                    html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+                    html2canvas: { scale: 2, useCORS: true, scrollY: 0, letterRendering: true },
                     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
                 };
 
                 await html2pdf().from(container).set(opt).save();
                 document.body.removeChild(container);
+                if (typeof UI.showNotification === 'function') UI.showNotification('✅ تم تحميل العقد بنجاح');
             }
-
-            if (typeof UI.showNotification === 'function') UI.showNotification('✅ تم تحميل العقد بنجاح');
-
         } catch (err) {
             console.error("Download Error:", err);
             alert("حدث خطأ أثناء تحميل العقد: " + err.message);

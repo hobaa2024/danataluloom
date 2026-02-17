@@ -1152,27 +1152,25 @@ async function generatePdfFromTemplate(template, studentData) {
 
     const pages = pdfDoc.getPages();
 
-    // Advanced Arabic Text Processor (Reshape + Reverse for PDF compatibility)
-    const fixArabic = (text) => {
+    // Advanced Arabic Text Processor
+    const fixArabic = (text, isForPdf = true) => {
         if (!text) return "";
         try {
             let str = String(text).trim();
-            // Check for Arabic characters
             const hasArabic = /[\u0600-\u06FF]/.test(str);
             if (!hasArabic) return str;
 
-            // 1. Reshape
+            // 1. Reshape الحروف
             const Reshaper = (typeof ArabicReshaper !== 'undefined' ? ArabicReshaper : window.ArabicReshaper);
             if (Reshaper) {
                 if (typeof Reshaper.convertArabic === 'function') str = Reshaper.convertArabic(str);
                 else if (typeof Reshaper.reshape === 'function') str = Reshaper.reshape(str);
-                else if (Reshaper.ArabicReshaper && typeof Reshaper.ArabicReshaper.convertArabic === 'function') str = Reshaper.ArabicReshaper.convertArabic(str);
             }
 
-            // 2. Reverse for PDF layout (Critical for pdf-lib)
-            let reversed = str.split('').reverse().join('');
+            // 2. Reverse ONLY for PDF download, keep natural for Browser Preview
+            if (!isForPdf) return str;
 
-            // 3. Fix segments that SHOULD stay LTR (Numbers, English, Dates)
+            let reversed = str.split('').reverse().join('');
             const ltrPattern = /([\d\/\-\.\+a-zA-Z]+)/g;
             reversed = reversed.replace(ltrPattern, function (match) {
                 return match.split('').reverse().join('');
@@ -1194,16 +1192,16 @@ async function generatePdfFromTemplate(template, studentData) {
         const target = cleanVar(placeholder);
 
         // Unified Variable Mapping
-        if (target === 'اسمالطالب') text = studentData.studentName || '';
+        if (target === 'اسمالطالب' || target === 'اسمالطالبه') text = studentData.studentName || '';
         else if (target === 'اسموليالامر') text = studentData.parentName || '';
         else if (target === 'المسار') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
-        else if (target === 'الصف') text = studentData.studentGrade || '';
-        else if (target === 'المرحلة' || target === 'المرحلةالدراسية') text = studentData.studentLevel || '';
-        else if (target === 'السنةالدراسية') text = studentData.customFields?.contractYear || studentData.contractYear || '';
-        else if (target === 'البريدالالكتروني') text = studentData.parentEmail || '';
-        else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية')
+        else if (target === 'الصف' || target === 'الصفالدراسي') text = studentData.studentGrade || '';
+        else if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه') text = studentData.studentLevel || '';
+        else if (target === 'السنةالدراسية' || target === 'السنهالدراسيه') text = studentData.customFields?.contractYear || studentData.contractYear || '';
+        else if (target === 'البريدالالكتروني' || target === 'الايميل') text = studentData.parentEmail || '';
+        else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية')
             text = studentData.customFields?.nationalId || studentData.nationalId || '';
-        else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر')
+        else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر' || target === 'رقمهويةوليالامر')
             text = studentData.customFields?.parentNationalId || '';
         else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'رقمجوالوليالامر' || target === 'رقمواتساب')
             text = studentData.parentWhatsapp || '';
@@ -1282,7 +1280,9 @@ async function generatePdfFromTemplate(template, studentData) {
         } else {
             try {
                 const size = 11;
-                const fixed = fixArabic(text);
+                // isForPdf = signatureData !== null (If we have signature, it's likely a final build for download)
+                const isFinal = signatureData !== null;
+                const fixed = fixArabic(text, isFinal);
                 const tw = customFont.widthOfTextAtSize(fixed, size);
                 let dx = pdfX + (fW - tw) / 2;
                 if (tw > fW * 0.9) dx = pdfX + fW - tw - 5;
