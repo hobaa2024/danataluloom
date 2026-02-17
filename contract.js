@@ -1194,17 +1194,17 @@ async function generatePdfFromTemplate(template, studentData) {
 
         // Comprehensive Field Mapping
         if (target === 'اسمالطالب' || target === 'اسمالطالبه') text = studentData.studentName || '';
-        else if (target === 'اسموليالامر') text = studentData.parentName || '';
+        else if (target === 'اسموليالامر' || target === 'اسموليالأمر') text = studentData.parentName || studentData.customFields?.parentName || '';
         else if (target === 'المسار') text = studentData.customFields?.studentTrack || studentData.studentTrack || '';
         else if (target === 'الصف' || target === 'الصفالدراسي') text = studentData.studentGrade || studentData.customFields?.studentGrade || '';
         else if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه' || target === 'مرحلة') text = studentData.studentLevel || studentData.customFields?.studentLevel || '';
         else if (target === 'السنةالدراسية' || target === 'السنهالدراسيه') text = studentData.customFields?.contractYear || studentData.contractYear || '';
         else if (target === 'البريدالالكتروني' || target === 'الايميل') text = studentData.parentEmail || '';
         else if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية' || target === 'هوية' || target === 'الهوية')
-            text = studentData.customFields?.nationalId || studentData.nationalId || '';
+            text = studentData.nationalId || studentData.customFields?.nationalId || '';
         else if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر' || target === 'رقمهويةوليالامر')
             text = studentData.customFields?.parentNationalId || '';
-        else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'رقمجوالوليالامر' || target === 'رقمواتساب')
+        else if (target === 'جوالوليالأمر' || target === 'رقمجوالوليالأمر' || target === 'رقمجوالوليالامر' || target === 'رقمواتساب' || target === 'جوال' || target === 'الواتساب')
             text = studentData.parentWhatsapp || '';
         else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
         else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
@@ -1225,17 +1225,15 @@ async function generatePdfFromTemplate(template, studentData) {
             const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
             text = settings.stampImage || window.SCHOOL_STAMP_IMAGE || null;
             isImage = true;
-        } else {
-            if (studentData.customFields) {
-                try {
-                    // direct search in customFields
-                    for (let k in studentData.customFields) { if (cleanVar(k) === target) text = studentData.customFields[k]; }
-                    if (!text) {
-                        const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-                        const fieldDef = (settings.customFields || []).find(f => cleanVar(f.label) === target);
-                        if (fieldDef) text = studentData.customFields[fieldDef.id] || '';
-                    }
-                } catch (e) { }
+        }
+
+        // Ultimate Fallback: Direct search by cleaned label in customFields
+        if (!text && studentData.customFields) {
+            for (let k in studentData.customFields) {
+                if (cleanVar(k) === target) {
+                    text = studentData.customFields[k];
+                    break;
+                }
             }
         }
 

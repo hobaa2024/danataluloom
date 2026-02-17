@@ -945,22 +945,35 @@ const UI = {
             });
         }
 
+        const cleanVar = (v) => v ? String(v).replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
         const dataToCompress = {
             i: student.id,
             s: student.studentName,
-            l: student.studentLevel,
-            g: student.studentGrade,
+            l: student.studentLevel || '',
+            g: student.studentGrade || '',
             p: student.parentName,
             e: student.parentEmail,
             w: student.parentWhatsapp,
             y: student.contractYear || new Date().getFullYear().toString(),
             tid: student.contractTemplateId || '',
-            // Added new fields
-            nid: student.customFields?.nationalId || student.nationalId || '',
+            // Added new fields with robust lookup
+            nid: student.nationalId || '',
             pnid: student.customFields?.parentNationalId || '',
             adr: student.address || student.customFields?.address || '',
             nat: student.nationality || student.customFields?.nationality || ''
         };
+
+        // Fallback: If critical fields are missing, search in customFields by label
+        if (student.customFields) {
+            const s = student.customFields;
+            const settings = db.getSettings();
+            (settings.customFields || []).forEach(f => {
+                const target = cleanVar(f.label);
+                if (target === 'المرحلة' || target === 'المرحله') dataToCompress.l = dataToCompress.l || s[f.id] || '';
+                if (target === 'الصف' || target === 'الصفالدراسي') dataToCompress.g = dataToCompress.g || s[f.id] || '';
+                if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الهوية' || target === 'هوية') dataToCompress.nid = dataToCompress.nid || s[f.id] || '';
+            });
+        }
 
         // If it's a text contract, include content
         if (template && template.type !== 'pdf_template') {
@@ -2443,6 +2456,7 @@ ${link}
                         parentWhatsapp: String(row['رقم الواتساب'] || row['الجوال'] || row['WhatsApp'] || ''),
                         studentLevel: row['المرحلة'] || row['Level'] || '',
                         studentGrade: row['الصف'] || row['Grade'] || '',
+                        nationalId: String(row['رقم الهوية'] || row['الهوية'] || row['سجل'] || row['Id'] || ''),
                         contractYear: row['السنة الدراسية'] || row['السنة'] || row['Year'] || new Date().getFullYear().toString(),
                         sendMethod: row['طريقة الإرسال'] || row['SendMethod'] || 'whatsapp',
                         contractTemplateId: assignedContractId,
