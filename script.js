@@ -1,3 +1,19 @@
+// Inject Embedded Cairo Font for Dashboard Accuracy
+if (typeof GLOBAL_CAIRO_FONT !== 'undefined' && GLOBAL_CAIRO_FONT) {
+    const fontStyles = `
+        @font-face {
+            font-family: 'CairoEmbedded';
+            src: url(data:font/ttf;base64,${GLOBAL_CAIRO_FONT});
+            font-weight: normal;
+            font-style: normal;
+        }
+        body, .card, .btn, .nav-link, table td, table th { font-family: 'CairoEmbedded', 'Cairo', sans-serif !important; }
+    `;
+    const styleSheet = document.createElement("style");
+    styleSheet.innerText = fontStyles;
+    document.head.appendChild(styleSheet);
+}
+
 // Database Management using LocalStorage
 class DatabaseManager {
     constructor() {

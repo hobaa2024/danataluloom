@@ -7,6 +7,22 @@ const urlParams = new URLSearchParams(window.location.search);
 const compressedData = urlParams.get('c');
 const studentIdFromUrl = urlParams.get('id');
 
+// Inject Embedded Cairo Font for Preview Accuracy
+if (typeof GLOBAL_CAIRO_FONT !== 'undefined' && GLOBAL_CAIRO_FONT) {
+    const fontStyles = `
+        @font-face {
+            font-family: 'CairoEmbedded';
+            src: url(data:font/ttf;base64,${GLOBAL_CAIRO_FONT});
+            font-weight: normal;
+            font-style: normal;
+        }
+        body, .contract-viewer, .contract-text, .btn, .section-title { font-family: 'CairoEmbedded', 'Cairo', sans-serif !important; }
+    `;
+    const styleSheet = document.createElement("style");
+    styleSheet.innerText = fontStyles;
+    document.head.appendChild(styleSheet);
+}
+
 // Global State
 let uploadedFile = null;
 let signatureData = null;
@@ -22,11 +38,23 @@ let lastY = 0;
 let cachedCairoFont = null;
 
 // Pre-fetch font immediately
-// Pre-fetch font immediately with hyper-resilience (using Amiri - more reliable)
+// Pre-fetch font immediately with hyper-resilience
 (async function prefetchFont() {
-    if (cachedCairoFont && cachedCairoFont.byteLength > 100000) return;
+    if (cachedCairoFont && cachedCairoFont.byteLength > 50000) return;
 
-    // STRATEGY A: Try CloudDB (Firebase) first - Most reliable for parents
+    // STRATEGY 0: Use Embedded Font (Immediate & Offline)
+    if (typeof GLOBAL_CAIRO_FONT !== 'undefined' && GLOBAL_CAIRO_FONT) {
+        try {
+            console.log("💎 Pre-fetching embedded Cairo font...");
+            const binary = atob(GLOBAL_CAIRO_FONT);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            cachedCairoFont = bytes;
+            return;
+        } catch (e) { console.warn("Embedded pre-fetch failed:", e); }
+    }
+
+    // STRATEGY A: Try CloudDB (Firebase)
     if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
         try {
             const cloudBase64 = await CloudDB.getFont('Amiri-Regular');
@@ -981,7 +1009,19 @@ async function generatePdfFromTemplate(template, studentData) {
         cachedCairoFont = null;
         let log = [];
 
-        // STRATEGY A: Try CloudDB (Firebase) first - Most reliable for parents
+        // STRATEGY A: Use Embedded Base64 Font from font-data.js (High Resilience)
+        if (typeof GLOBAL_CAIRO_FONT !== 'undefined' && GLOBAL_CAIRO_FONT) {
+            try {
+                console.log("💎 Using embedded Cairo font data...");
+                const binary = atob(GLOBAL_CAIRO_FONT);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                cachedCairoFont = bytes; // STORE RAW BYTES
+                return await pdfDoc.embedFont(cachedCairoFont);
+            } catch (e) { console.warn("Embedded font failed, trying other sources:", e); }
+        }
+
+        // STRATEGY B: Try CloudDB (Firebase)
         if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
             try {
                 console.log("☁️ Attempting to load font from CloudDB...");
@@ -1129,15 +1169,13 @@ async function generatePdfFromTemplate(template, studentData) {
                 else if (Reshaper.ArabicReshaper && typeof Reshaper.ArabicReshaper.convertArabic === 'function') str = Reshaper.ArabicReshaper.convertArabic(str);
             }
 
-            // 2. Reverse for PDF layout
+            // 2. Reverse for PDF layout (Critical for pdf-lib)
             let reversed = str.split('').reverse().join('');
 
-            // 3. Fix segments that SHOULD stay LTR (Numbers, English)
-            // This is critical: without this, 123 becomes 321
-            const ltrMatch = /([a-zA-Z0-9\s.+@#]+)/g;
-            reversed = reversed.replace(ltrMatch, function (m) {
-                // If it's a number or english, re-reverse it back to natural order
-                return m.split('').reverse().join('');
+            // 3. Fix segments that SHOULD stay LTR (Numbers, English, Dates)
+            const ltrPattern = /([\d\/\-\.\+a-zA-Z]+)/g;
+            reversed = reversed.replace(ltrPattern, function (match) {
+                return match.split('').reverse().join('');
             });
 
             return reversed;
