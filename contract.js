@@ -250,10 +250,8 @@ async function loadStudentData() {
     const finalId = studentIdFromUrl || (student ? student.id : null);
 
     // CRITICAL: Always check Firebase FIRST to see if contract was already signed
-    // This prevents re-signing even if someone shares the original link
-    let firebaseStudent = null;
     if (finalId && finalId !== 'null' && finalId !== 'undefined' && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
-        firebaseStudent = await CloudDB.getStudent(String(finalId));
+        const firebaseStudent = await CloudDB.getStudent(String(finalId));
 
         if (firebaseStudent) {
             // Check if already signed in Firebase (THE AUTHORITATIVE SOURCE)
@@ -270,15 +268,12 @@ async function loadStudentData() {
                 return student;
             }
 
-            // If not signed, merge non-critical data but keep URL contract content
+            // If not signed, merge data
             if (student) {
                 student = {
                     ...student,
-                    // Bring in all data from Firebase as fallback
                     ...firebaseStudent,
-                    // Ensure customFields are merged, not overwritten
                     customFields: { ...(student.customFields || {}), ...(firebaseStudent.customFields || {}) },
-                    // Status and Signature logic
                     contractStatus: firebaseStudent.contractStatus || student.contractStatus,
                     contractNo: firebaseStudent.contractNo || student.contractNo,
                     idImage: firebaseStudent.idImage || student.idImage,
@@ -298,7 +293,6 @@ async function loadStudentData() {
         document.getElementById('contractYear').textContent = student.contractYear;
         document.getElementById('contractParentName').textContent = student.parentName;
 
-        // Show ID image step by default for unsigned contracts
         const docsStep = document.getElementById('docsStep');
         if (docsStep) docsStep.style.display = 'block';
 
@@ -307,7 +301,6 @@ async function loadStudentData() {
             if (extraDocsSection) extraDocsSection.style.display = 'block';
         }
 
-        // Populate Contract Text BEFORE checking status (Critical for PDF generation)
         if (!contract) {
             if (student.contractTitle && student.contractContent) {
                 contract = {
@@ -316,222 +309,96 @@ async function loadStudentData() {
                     type: student.contractType || 'text'
                 };
             } else {
-                // Try Local Storage First
                 const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-                // FIX: Prioritize exact ID match, then default
-                contract = templates.find(c => c.id === student.contractTemplateId);
-                if (!contract) contract = templates.find(c => c.isDefault);
+                contract = templates.find(c => c.id === student.contractTemplateId) || templates.find(c => c.isDefault) || templates[0];
 
-                // If not found locally, try Cloud (Essential for Parents)
                 if (!contract && student.contractTemplateId && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
                     try {
-                        console.log('☁️ Fetching contract template from cloud:', student.contractTemplateId);
                         contract = await CloudDB.getContractTemplate(student.contractTemplateId);
-
-                        // Update cache with the latest version from cloud
-                        if (contract) {
-                            const localTemplates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-                            const idx = localTemplates.findIndex(t => t.id === contract.id);
-                            if (idx !== -1) {
-                                localTemplates[idx] = contract;
-                            } else {
-                                localTemplates.push(contract);
-                            }
-                            localStorage.setItem('contractTemplates', JSON.stringify(localTemplates));
-                        }
-                    } catch (err) {
-                        console.error("Cloud Fetch Error:", err);
-                    }
-                }
-
-                // Fallback to default local if still null
-                if (!contract) {
-                    contract = templates.find(c => c.isDefault) || templates[0];
-                    if (contract) console.log('🏠 Using local fallback template:', contract.title);
+                    } catch (err) { }
                 }
             }
         }
 
-        // Final sanity check for template
-        if (!contract && typeof CloudDB !== 'undefined' && CloudDB.isReady() && student.contractTemplateId) {
-            console.log('🔄 Retrying template fetch...');
-            contract = await CloudDB.getContractTemplate(student.contractTemplateId);
-        }
         if (contract) {
             const contractTextDiv = document.querySelector('.contract-text');
             if (contractTextDiv) {
-                // Determine if it's a PDF Template
-                const isPdf = (contract.type === 'pdf_template') ||
-                    (contract.content && contract.content.startsWith('قالب PDF:'));
-
-                if (isPdf && !contract.pdfData) {
-                    console.warn("⚠️ PDF template detected but pdfData is missing. Attempting deep fetch...");
-                    if (typeof CloudDB !== 'undefined' && CloudDB.isReady() && contract.id) {
-                        const full = await CloudDB.getContractTemplate(contract.id);
-                        if (full && full.pdfData) contract = full;
-                    }
-                }
+                const isPdf = (contract.type === 'pdf_template') || (contract.content && contract.content.startsWith('قالب PDF:'));
 
                 if (isPdf && contract.pdfData) {
-                    // PDF Template Mode
                     contractTextDiv.innerHTML = `
                         <div style="text-align:center; padding: 20px;">
                             <h3 style="color: var(--primary-color);">${contract.title}</h3>
-                            <p style="margin-bottom: 20px; font-size: 0.9rem; color: var(--text-muted);">هذا العقد محفوظ بتنسيقه الرسمي (PDF). يتم الآن تجهيز نسختك الخاصة ببياناتك:</p>
                             <div id="pdf-loading-state" style="padding: 40px; background: #f1f5f9; border-radius: 12px; margin-bottom: 20px;">
                                 <div class="loading"></div>
                                 <p style="margin-top: 15px; color: #4a5568; font-weight: bold;">جاري تحضير العقد ببياناتك... يرجى الانتظار</p>
                             </div>
-                            <div id="pdf-preview-container" style="display:none; border: 2px solid var(--border-color); border-radius: 12px; background: #525659; overflow: auto; max-height: 500px; padding: 10px;">
-                                <canvas id="pdf-preview-canvas" style="max-width: 100%; height: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.2);"></canvas>
-                            </div>
-                            <div id="pdf-controls" style="display:none;">
-                                <div id="pdf-page-info" style="margin-top: 10px; font-size: 0.8rem; font-weight: bold;"></div>
-                                <div style="display: flex; gap: 10px; justify-content: center; margin-top: 10px;">
-                                    <button type="button" class="btn btn-secondary btn-sm" onclick="renderPdfPage(currentPdfPage - 1)" id="prevPdfBtn">الصفحة السابقة</button>
-                                    <button type="button" class="btn btn-secondary btn-sm" onclick="renderPdfPage(currentPdfPage + 1)" id="nextPdfBtn">الصفحة التالية</button>
-                                </div>
+                            <div id="pdf-preview-container" style="display:none; border: 2px solid var(--border-color); border-radius: 12px; background: #525659; overflow: auto; max-height: 800px; padding: 10px;">
+                                <canvas id="pdf-preview-canvas" style="max-width: 100%; height: auto;"></canvas>
                             </div>
                         </div>
                     `;
-
-                    // Store contract for later
                     currentStudent.contract = contract;
                     currentStudent.contractType = 'pdf_template';
 
-                    // Start Loading PDF (Personalized with student data)
-                    const pdfGenerationTimeout = setTimeout(() => {
-                        const loadingState = document.getElementById('pdf-loading-state');
-                        if (loadingState && loadingState.style.display !== 'none') {
-                            loadingState.innerHTML = `
-                                <div style="color: #4a5568;">
-                                    <p>⚙️ العملية تأخذ وقتاً أطول من المتوقع (بسبب جودة الملفات أو سرعة الشبكة)...</p>
-                                    <p style="font-size: 0.8rem; margin-top:5px;">يرجى الانتظار قليلاً أو محاولة تحديث الصفحة.</p>
-                                </div>
-                            `;
-                        }
-                    }, 12000);
-
                     setTimeout(async () => {
                         try {
-                            console.log("Generating personalized PDF preview...");
                             const pdfBytes = await generatePdfFromTemplate(contract, student);
-                            clearTimeout(pdfGenerationTimeout);
-
                             if (pdfBytes) {
                                 const blob = new Blob([pdfBytes], { type: 'application/pdf' });
                                 const url = window.URL.createObjectURL(blob);
-
                                 const loadingState = document.getElementById('pdf-loading-state');
                                 if (loadingState) loadingState.style.display = 'none';
-
                                 const previewContainer = document.getElementById('pdf-preview-container');
                                 if (previewContainer) {
                                     previewContainer.style.display = 'block';
-                                    previewContainer.innerHTML = `<iframe src="${url}" style="width:100%; height:800px; border:none; border-radius:8px;" title="Contract Preview"></iframe>`;
-
-                                    const dlBtn = document.createElement('a');
-                                    dlBtn.href = url;
-                                    dlBtn.download = `عقد_${student.studentName || 'مدرسي'}.pdf`;
-                                    dlBtn.className = 'btn btn-primary';
-                                    dlBtn.style.display = 'block';
-                                    dlBtn.style.textAlign = 'center';
-                                    dlBtn.style.marginTop = '15px';
-                                    dlBtn.innerHTML = '📥 تحميل العقد المكتمل (PDF)';
-                                    previewContainer.parentNode.insertBefore(dlBtn, previewContainer.nextSibling);
+                                    previewContainer.innerHTML = `<iframe src="${url}" style="width:100%; height:800px; border:none; border-radius:8px;"></iframe>`;
                                 }
-                            } else {
-                                throw new Error("Generated PDF is empty");
                             }
                         } catch (err) {
-                            console.error("PDF Preview generation failed:", err);
-                            clearTimeout(pdfGenerationTimeout);
-                            const loadingState = document.getElementById('pdf-loading-state');
-                            if (loadingState) {
-                                loadingState.innerHTML = `
-                                    <div style="color: #e53e3e; font-weight: bold; background: #fff5f5; padding: 15px; border-radius: 8px; border: 1px solid #feb2b2;">
-                                        <p>⚠️ عذراً، تعذر تحميل معاينة العقد.</p>
-                                        <p style="font-size: 0.8rem; font-weight: normal; margin-top: 5px;">السبب: ${err.message || 'خطأ في المعالجة'}</p>
-                                        <button class="btn btn-secondary btn-sm" style="margin-top:10px;" onclick="location.reload()">تحديث الصفحة</button>
-                                    </div>
-                                `;
-                            }
+                            console.error("PDF Preview failed:", err);
                         }
                     }, 100);
                 } else {
-                    // Normal Text Mode
-                    // Advanced HTML Variable Replacement (Smart Matching)
-                    let content = contract.content;
+                    let content = contract.content || '';
                     const cleanVar = (v) => v ? v.replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
-
-                    // Possible variables to replace
                     const varMappings = {
                         'اسمالطالب': student.studentName || '',
                         'اسموليالامر': student.parentName || '',
-                        'المسار': student.customFields?.studentTrack || student.studentTrack || '',
-                        'الصف': student.studentGrade ? `الصف ${student.studentGrade}` : '',
-                        'المرحلةالدراسية': student.studentLevel || '',
+                        'الصف': `الصف ${student.studentGrade}`,
                         'المرحلة': student.studentLevel || '',
                         'السنةالدراسية': student.contractYear || '',
-                        'بريدوليالامر': student.parentEmail || '',
-                        'البريدالالكتروني': student.parentEmail || '',
-                        'هويةالطالب': student.customFields?.nationalId || student.nationalId || '',
-                        'رقمهويةالطالب': student.customFields?.nationalId || student.nationalId || '',
-                        'هويةوليالامر': student.customFields?.parentNationalId || '',
-                        'رقمهويةوليالامر': student.customFields?.parentNationalId || '',
-                        'جوالوليالامر': student.parentWhatsapp || '',
-                        'رقمجوالوليالامر': student.parentWhatsapp || '',
-                        'العنوان': student.address || student.customFields?.address || '',
-                        'الجنسية': student.nationality || student.customFields?.nationality || '',
+                        'هويةالطالب': student.nationalId || '',
+                        'هويةوليالامر': student.parentNationalId || '',
                         'التاريخ': new Date().toLocaleDateString('ar-SA')
                     };
 
-                    // Identify all {variables} in content
                     const foundVars = content.match(/{[^}]+}/g) || [];
                     foundVars.forEach(v => {
                         const target = cleanVar(v);
                         if (varMappings[target] !== undefined) {
                             content = content.replace(v, varMappings[target]);
-                        } else if (student.customFields) {
-                            // Check custom fields by label
-                            try {
-                                const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-                                const fieldDef = (settings.customFields || []).find(f => cleanVar(f.label) === target);
-                                if (fieldDef) {
-                                    content = content.replace(v, student.customFields[fieldDef.id] || '');
-                                }
-                            } catch (e) { }
                         }
                     });
 
                     const stampImage = window.SCHOOL_STAMP_IMAGE || (JSON.parse(localStorage.getItem('appSettings') || '{}')).stampImage;
                     const stampHtml = stampImage
-                        ? `<div style="text-align:center; margin:20px 0;"><img src="${stampImage}" style="max-height:100px; width:auto;"></div>`
-                        : `<div class="school-stamp" style="width:100px; height:100px; border:4px double #2563eb; border-radius:50%; display:flex; align-items:center; justify-content:center; position:relative; color:#2563eb; font-weight:900; transform:rotate(-15deg); background:rgba(37,99,235,0.03); margin:20px auto;"><div style="position:absolute; width:90%; height:90%; border:1px solid #2563eb; border-radius:50%;"></div><div style="font-size:11px; text-align:center; max-width:80%; line-height:1.2;">${window.SCHOOL_STAMP_TEXT || 'الإدارة'}</div></div>`;
+                        ? `<div style="text-align:center; margin:20px 0;"><img src="${stampImage}" style="max-height:100px;"></div>`
+                        : `<div style="text-align:center; margin:20px 0; color:#2563eb; font-weight:bold; border:2px solid #2563eb; width:100px; height:100px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:20px auto;">${window.SCHOOL_STAMP_TEXT || 'الإدارة'}</div>`;
 
                     currentStudent.cachedContractContent = content;
                     currentStudent.cachedContractTitle = contract.title;
                     currentStudent.contractType = 'text';
-
                     contractTextDiv.innerHTML = `<h3 style="font-size: 1.15rem; margin-bottom: 0.5rem;">${contract.title}</h3><div style="font-size: 0.92rem; line-height: 1.6;">${content.replace(/\n/g, '<br>')}</div><br>${stampHtml}`;
                 }
             }
         } else {
-            // Error Handling: If no contract could be loaded
             const textDiv = document.querySelector('.contract-text');
             if (textDiv) {
-                textDiv.innerHTML = `
-                    <div style="padding:40px; text-align:center;">
-                        <div style="font-size:3rem; margin-bottom:15px;">⚠️</div>
-                        <h3 style="color:#e53e3e;">عذراً، لم نتمكن من العثور على محتوى العقد</h3>
-                        <p style="color:#718096; margin-top:10px;">يبدو أن هناك مشكلة في رابط العقد أو أن القالب قد تم حذفه من النظام.</p>
-                        <button class="btn btn-secondary btn-sm" onclick="location.reload()" style="margin-top:20px;">تحديث الصفحة</button>
-                    </div>
-                `;
+                textDiv.innerHTML = `<div style="padding:40px; text-align:center;"><h3>عذراً، لم نتمكن من تحميل العقد</h3><p>يرجى مراجعة الإدارة.</p></div>`;
             }
         }
 
-        // If status is pending/sent, definitely let them sign
         if (student.contractStatus === 'pending' || student.contractStatus === 'sent') {
             console.log('✅ Status is pending/sent, allowing signature');
         }
@@ -563,51 +430,89 @@ function showAlreadySignedSimplified(student, isFirstTime = false) {
     try {
         const card = successContainer.querySelector('.success-card');
         if (card) {
-            // Update Icon and Title based on context
-            const icon = isFirstTime ? '🎉' : '📝';
-            const title = isFirstTime ? 'تم التوقيع بنجاح!' : 'تم توقيع العقد مسبقاً';
-            const subtitle = isFirstTime ? 'شكراً لك! تم توقيع العقد وإرساله بنجاح.' : 'تم توقيع هذا العقد وإرساله بنجاح مسبقاً.';
-            const color = isFirstTime ? 'var(--success-gradient)' : 'var(--primary-gradient)';
+            const isVerified = student.contractStatus === 'verified';
+            const icon = isFirstTime ? '🎉' : '✅';
+            const title = isFirstTime ? 'تم التوقيع بنجاح!' : 'العقد موقّع مسبقاً';
+            const subtitle = isFirstTime
+                ? 'شكراً لك! لقد تم استلام توقيعك وحفظه بنجاح في النظام.'
+                : 'لقد قمت بتوقيع هذا العقد مسبقاً، يمكنك تحميل نسخة منه أو طباعته.';
+
+            const statusLabel = isVerified ? 'موثق ومعتمد ✓' : 'موقع قيد المراجعة';
+            const statusColor = isVerified ? '#059669' : '#0284c7';
+            const statusBg = isVerified ? '#ecfdf5' : '#f0f9ff';
 
             card.innerHTML = `
-                <div class="success-icon" style="background: ${color};">${icon}</div>
-                <h2 class="success-title">${title}</h2>
-                <p class="success-subtitle" style="margin-bottom: 1rem;">${subtitle}</p>
+                <div class="success-icon" style="background: var(--success-gradient); margin-bottom: 2rem;">${icon}</div>
+                <h2 class="success-title" style="font-size: 2.2rem; color: #1e293b; margin-bottom: 0.5rem;">${title}</h2>
+                <p class="success-subtitle" style="font-size: 1.1rem; color: #64748b; max-width: 500px; margin: 0 auto 2.5rem;">${subtitle}</p>
                 
-                <div style="background: var(--bg-light); border: 2px solid var(--border-color); border-radius: 16px; padding: 1.5rem; margin-bottom: 2rem; text-align: right; direction: rtl;">
-                    <h4 style="margin-top:0; color:var(--primary-color); border-bottom:1px solid #ddd; padding-bottom:8px; margin-bottom:12px;">تفاصيل الطالب</h4>
-                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--text-muted);">اسم الطالب:</span><span style="font-weight:700;">${student.studentName || '---'}</span></div>
-                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--text-muted);">المرحلة / الصف:</span><span style="font-weight:700;">${student.studentLevel || '---'} / ${student.studentGrade || '---'}</span></div>
-                    <div style="display:flex; justify-content:space-between; border-top:1px solid #eee; pt:8px; mt:8px;"><span style="color:var(--text-muted);">رقم العقد:</span><span style="font-weight:800; color:var(--text-dark);">${student.contractNo || '---'}</span></div>
+                <div style="background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 20px; padding: 2rem; margin-bottom: 2.5rem; text-align: right; position: relative;">
+                    <div style="position: absolute; top: 1.5rem; left: 1.5rem; padding: 0.5rem 1rem; border-radius: 999px; background: ${statusBg}; color: ${statusColor}; font-weight: 800; font-size: 0.85rem; border: 1px solid ${statusColor}40;">
+                        ${statusLabel}
+                    </div>
+                    
+                    <h4 style="margin-top:0; color: #4f46e5; font-size: 1.2rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.5rem;">👤</span> تفاصيل الطالب والعقد
+                    </h4>
+                    
+                    <div style="display:grid; gap: 1rem;">
+                        <div style="display:flex; justify-content:space-between; padding-bottom: 0.75rem; border-bottom: 1px solid #e2e8f0;">
+                            <span style="color:#64748b; font-weight: 600;">اسم الطالب:</span>
+                            <span style="font-weight:800; color: #1e293b;">${student.studentName || '---'}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; padding-bottom: 0.75rem; border-bottom: 1px solid #e2e8f0;">
+                            <span style="color:#64748b; font-weight: 600;">المرحلة / الصف:</span>
+                            <span style="font-weight:800; color: #1e293b;">${student.studentLevel || '---'} / ${student.studentGrade || '---'}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; padding-bottom: 0.75rem; border-bottom: 1px solid #e2e8f0;">
+                            <span style="color:#64748b; font-weight: 600;">رقم العقد:</span>
+                            <span style="font-weight:900; color: #4f46e5; font-family: monospace; font-size: 1.1rem;">${student.contractNo || '---'}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between;">
+                            <span style="color:#64748b; font-weight: 600;">تاريخ التوقيع:</span>
+                            <span style="font-weight:700; color: #1e293b;">${student.signedAt ? new Date(student.signedAt).toLocaleDateString('ar-SA') : '---'}</span>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="success-actions">
-                    <button id="downloadPdfBtn" class="btn btn-primary btn-large" style="width:100%">📥 تحميل العقد المكتمل (PDF)</button>
-                    <button class="btn btn-secondary" onclick="printContract()" style="width:100%; margin-top:1rem;">🖨️ طباعة العقد</button>
+                <div class="success-actions" style="display: grid; gap: 1rem;">
+                    <button id="downloadPdfBtn" class="btn btn-primary btn-large" style="width:100%; height: 65px; font-size: 1.2rem; border-radius: 16px;">
+                        📥 تحميل نسخة العقد (PDF)
+                    </button>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <button class="btn btn-secondary" onclick="printContract()" style="padding: 1rem; border-radius: 12px; font-weight: 700;">
+                            🖨️ طباعة
+                        </button>
+                        <button class="btn btn-secondary" onclick="location.reload()" style="padding: 1rem; border-radius: 12px; font-weight: 700;">
+                            🔄 تحديث
+                        </button>
+                    </div>
                 </div>
+                
+                <p style="margin-top: 2rem; color: #94a3b8; font-size: 0.85rem;">يمكنك الاحتفاظ بالرابط للعودة لهذه الصفحة لاحقاً</p>
             `;
+
+            if (mainContainer) {
+                mainContainer.style.display = 'none';
+                document.body.classList.add('view-success');
+            }
+            successContainer.style.display = 'block';
+            successContainer.scrollIntoView({ behavior: 'smooth' });
+
+            if (student.signature) signatureData = student.signature;
+            if (student.idImage) uploadedFile = student.idImage;
+            if (student.extraDocs) extraDocs = student.extraDocs || [];
+            currentStudent = student;
+
+            setTimeout(() => {
+                if (typeof setupPdfDownload === 'function') {
+                    setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
+                }
+            }, 200);
         }
     } catch (e) {
         console.error("Error rendering success card:", e);
     }
-
-    if (mainContainer) {
-        mainContainer.style.display = 'none';
-        document.body.classList.add('view-success');
-    }
-    successContainer.style.display = 'block';
-    successContainer.scrollIntoView({ behavior: 'smooth' });
-
-    if (student.signature) signatureData = student.signature;
-    if (student.idImage) uploadedFile = student.idImage;
-    if (student.extraDocs) extraDocs = student.extraDocs || [];
-    currentStudent = student;
-
-    setTimeout(() => {
-        if (typeof setupPdfDownload === 'function') {
-            setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
-        }
-    }, 200);
 }
 
 function showSuccessAfterSigning(student) {
