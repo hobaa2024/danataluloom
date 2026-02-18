@@ -1544,5 +1544,20 @@ async function generatePdfFromTemplate(template, studentData) {
     return await pdfDoc.save();
 }
 
-window.addEventListener('load', async () => { const std = await loadStudentData(); if (std) { resizeCanvas(); updateProgress(); } });
+// Since contract.js is loaded dynamically, window 'load' may have already fired.
+// We call the init function directly and also register the resize handler.
 window.addEventListener('resize', resizeCanvas);
+
+(async function init() {
+    // If DOM is already ready, run immediately; otherwise wait for DOMContentLoaded
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', async () => {
+            const std = await loadStudentData();
+            if (std) { resizeCanvas(); updateProgress(); }
+        });
+    } else {
+        // DOM is already loaded (most likely case when script is injected dynamically)
+        const std = await loadStudentData();
+        if (std) { resizeCanvas(); updateProgress(); }
+    }
+})();
