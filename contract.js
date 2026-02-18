@@ -120,15 +120,6 @@ function loadScript(src) {
 })();
 
 // Dependency Check
-function loadScript(src) {
-    return new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = src;
-        s.onload = resolve;
-        s.onerror = reject;
-        document.head.appendChild(s);
-    });
-}
 
 (async function checkDependencies() {
     if (typeof LZString === 'undefined') {
@@ -608,8 +599,13 @@ function showAlreadySignedSimplified(student) {
         console.error("Error rendering success card:", e);
     }
 
-    if (mainContainer) mainContainer.style.display = 'none';
+    if (mainContainer) {
+        mainContainer.style.display = 'none';
+        // Add a class to body to indicate success view
+        document.body.classList.add('view-success');
+    }
     successContainer.style.display = 'block';
+    successContainer.scrollIntoView({ behavior: 'smooth' });
 
     if (student.signature) signatureData = student.signature;
     if (student.idImage) uploadedFile = student.idImage;
@@ -909,7 +905,16 @@ function printContract() {
 
 function showLoadError() {
     const main = document.getElementById('mainContainer');
-    if (main) main.innerHTML = '<div style="text-align:center; padding:5rem 2rem;"><h2>⚠️ الرابط غير صالح أو منتهي</h2></div>';
+    if (main) {
+        main.innerHTML = `
+            <div style="text-align:center; padding:5rem 2rem; background: var(--white); border-radius: 20px; box-shadow: var(--shadow-lg); margin: 2rem;">
+                <div style="font-size: 4rem; margin-bottom: 1.5rem;">⚠️</div>
+                <h2 style="color: var(--danger-gradient); margin-bottom: 1rem;">عذراً، الرابط غير صالح</h2>
+                <p style="color: var(--text-muted); font-size: 1.1rem;">يبدو أن هذا الرابط منتهي الصلاحية أو غير صحيح. يرجى التواصل مع إدارة المدرسة للحصول على رابط جديد.</p>
+                <button onclick="location.reload()" class="btn btn-primary" style="margin-top: 2rem;">تحديث الصفحة</button>
+            </div>
+        `;
+    }
 }
 
 // CANVAS DRAWING (With persistence on resize)

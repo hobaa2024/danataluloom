@@ -1869,6 +1869,23 @@
         </div>
     </div>
 
+    <script>
+        // Emergency Logo Recovery
+        document.querySelectorAll('img').forEach(img => {
+            img.onerror = function () {
+                if (this.src.includes('logo.png')) {
+                    console.warn("Logo failed to load, trying fallback...");
+                    // Try to load from Firebase setting or a placeholder if local fails
+                    const settings = JSON.parse(localStorage.getItem('appSettings') || '{}');
+                    if (settings.schoolLogo) {
+                        this.src = settings.schoolLogo;
+                    } else {
+                        this.src = 'https://via.placeholder.com/200x80?text=Dana+AI+School';
+                    }
+                }
+            };
+        });
+    </script>
 </body>
 
 </html>
