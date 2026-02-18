@@ -70,12 +70,12 @@
         .contract-header {
             background: rgba(255, 255, 255, 0.98);
             backdrop-filter: blur(20px);
-            padding: 1.5rem 0;
+            padding: 1rem 0;
             box-shadow: var(--shadow-md);
             position: sticky;
             top: 0;
-            z-index: 100;
-            border-bottom: 2px solid rgba(102, 126, 234, 0.2);
+            z-index: 1000;
+            border-bottom: 2px solid var(--primary-color);
         }
 
         .header-content {
@@ -865,7 +865,8 @@
         </div>
 
         <!-- Step 2: Documents Upload -->
-        <div class="section-card" id="docsStep" style="animation-delay: 0.2s">
+        <div class="section-card" id="docsStep"
+            style="display: block !important; opacity: 1 !important; visibility: visible !important;">
             <div class="section-header">
                 <div class="section-icon">🪪</div>
                 <div>
@@ -947,71 +948,74 @@
                 <span class="btn-icon">✈️</span>
             </button>
         </div>
+    </div><!-- End of mainContainer -->
 
-        <!-- Success Page -->
-        <div class="success-container" id="successContainer">
-            <div class="success-card">
-                <div class="success-icon">✓</div>
-                <h1 class="success-title">تم التوقيع بنجاح! 🎉</h1>
-                <p class="success-subtitle">شكراً لك! تم توقيع العقد وإرساله بنجاح</p>
+    <!-- Success Overlay (Fixed ID and Structure) -->
+    <div id="successContainer" class="container" style="display: none; padding-top: 2rem; padding-bottom: 5rem;">
+        <div class="success-card shadow-xl"
+            style="background: white; border-radius: 24px; padding: 3rem 2rem; text-align: center; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0;">
+            <!-- Content will be injected by JS -->
+            <div class="success-icon">✓</div>
+            <h1 class="success-title">تم التوقيع بنجاح! 🎉</h1>
+            <p class="success-subtitle">شكراً لك! تم توقيع العقد وإرساله بنجاح</p>
 
-                <div class="contract-info">
-                    <div class="info-row">
-                        <div class="info-label">رقم العقد</div>
-                        <div class="info-value" id="contractNumber">-</div>
-                    </div>
-                    <div class="info-row">
-                        <div class="info-label">تاريخ التوقيع</div>
-                        <div class="info-value" id="submitDate">-</div>
-                    </div>
-                    <div class="info-row">
-                        <div class="info-label">الحالة</div>
-                        <div class="info-value" style="color: var(--success-color);">مكتمل ✓</div>
-                    </div>
+            <div class="contract-info">
+                <div class="info-row">
+                    <div class="info-label">رقم العقد</div>
+                    <div class="info-value" id="contractNumber">-</div>
                 </div>
-
-                <div class="success-actions" id="successActions">
-                    <!-- Will be filled by JavaScript -->
+                <div class="info-row">
+                    <div class="info-label">تاريخ التوقيع</div>
+                    <div class="info-value" id="submitDate">-</div>
+                </div>
+                <div class="info-row">
+                    <div class="info-label">الحالة</div>
+                    <div class="info-value" style="color: var(--success-color);">مكتمل ✓</div>
                 </div>
             </div>
-        </div>
 
-        <!-- Scripts -->
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-        <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-        <script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
-        <script>
-            if (typeof PDFLib === 'undefined') {
-                document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"><\/script>');
+            <div class="success-actions" id="successActions">
+                <!-- Will be filled by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://unpkg.com/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
+    <script>
+        if (typeof PDFLib === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"><\/script>');
+        }
+    </script>
+    <script src="font-data.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js"></script>
+    <script>
+        // Wait a moment for the library to initialize, then check
+        setTimeout(() => {
+            if (typeof ArabicReshaper === 'undefined' && typeof window.ArabicReshaper === 'undefined') {
+                console.warn("Primary ArabicReshaper failed to load, trying fallback...");
+                const fallback = document.createElement('script');
+                fallback.src = 'https://unpkg.com/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js';
+                fallback.onerror = () => console.error("Both ArabicReshaper sources failed. Arabic text in PDF may not display correctly.");
+                document.head.appendChild(fallback);
+            } else {
+                console.log("✅ ArabicReshaper loaded successfully");
             }
-        </script>
-        <script src="font-data.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js"></script>
-        <script>
-            // Wait a moment for the library to initialize, then check
-            setTimeout(() => {
-                if (typeof ArabicReshaper === 'undefined' && typeof window.ArabicReshaper === 'undefined') {
-                    console.warn("Primary ArabicReshaper failed to load, trying fallback...");
-                    const fallback = document.createElement('script');
-                    fallback.src = 'https://unpkg.com/arabic-reshaper@2.1.0/dist/arabic-reshaper.min.js';
-                    fallback.onerror = () => console.error("Both ArabicReshaper sources failed. Arabic text in PDF may not display correctly.");
-                    document.head.appendChild(fallback);
-                } else {
-                    console.log("✅ ArabicReshaper loaded successfully");
-                }
-            }, 500);
-        </script>
-        <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-        <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-        <script src="firebase-config.js"></script>
-        <script>
-            // Force cache invalidation - load contract.js with timestamp
-            const script = document.createElement('script');
-            script.src = 'contract.js?t=' + Date.now();
-            document.body.appendChild(script);
-        </script>
+        }, 500);
+    </script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <script>
+        // Force cache invalidation - load contract.js with timestamp
+        const script = document.createElement('script');
+        script.src = 'contract.js?t=' + Date.now();
+        document.body.appendChild(script);
+    </script>
 </body>
 
 </html>

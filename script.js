@@ -1786,9 +1786,23 @@ ${link}
     applyBranding() {
         const settings = db.getSettings();
         const logo = settings.schoolLogo || 'assets/logo.png';
-        if (document.getElementById('navLogo')) document.getElementById('navLogo').src = logo;
-        if (document.getElementById('settingsLogoPreview')) document.getElementById('settingsLogoPreview').src = logo;
-        if (document.getElementById('loginLogo')) document.getElementById('loginLogo').src = logo;
+        const bg = settings.loginBackground || 'assets/login-bg.jpg';
+
+        // Update Logos
+        const logoElements = ['navLogo', 'settingsLogoPreview', 'loginLogo'];
+        logoElements.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                // Only update if current setting is different to prevent flickering
+                if (el.src !== logo) el.src = logo;
+            }
+        });
+
+        // Update Login Background
+        const bgEl = document.getElementById('loginBg');
+        if (bgEl) {
+            bgEl.style.backgroundImage = `url('${bg}')`;
+        }
     },
 
     saveSettings() {
@@ -2403,7 +2417,7 @@ ${link}
                 'البريد الإلكتروني': s.parentEmail,
                 'رقم الواتساب': s.parentWhatsapp,
                 'الجنسية': s.nationality || s.customFields?.nationality || '-',
-                'نوع التسجيل': s.registrationType === 'mustajid' ? 'منتظم مستجد' : 'طالب قديم',
+                'نوع التسجيل': s.registrationType === 'mustajid' ? 'مستجد' : 'منتظم',
                 'حالة العقد': this.getStatusText(s.contractStatus),
                 'وقت التوقيع': s.signedAt ? new Date(s.signedAt).toLocaleString('ar-SA') : '-',
                 'تاريخ الإضافة': s.createdAt ? new Date(s.createdAt).toLocaleDateString('ar-SA') : '-',
@@ -2592,8 +2606,9 @@ ${link}
                         parentNationalId: String(row['هوية ولي الأمر'] || row['ParentID'] || ''),
                         contractYear: row['السنة الدراسية'] || row['السنة'] || row['Year'] || new Date().getFullYear().toString(),
                         sendMethod: row['طريقة الإرسال'] || row['SendMethod'] || 'whatsapp',
-                        registrationType: row['نوع التسجيل'] === 'طالب قديم' ? 'existing' : 'mustajid', // Default to mustajid (New Student)
+                        registrationType: (row['نوع التسجيل'] === 'طالب قديم' || row['نوع التسجيل'] === 'منتظم') ? 'existing' : 'mustajid',
                         nationality: row['الجنسية'] || row['Nationality'] || '',
+                        contractStatus: 'pending', // Default to pending
                         contractTemplateId: assignedContractId,
                         customFields: customFields
                     };
@@ -2797,7 +2812,7 @@ ${link}
                 'البريد الإلكتروني': 'parent@example.com',
                 'رقم الواتساب': '966500000000',
                 'الجنسية': 'سعودي',
-                'نوع التسجيل': 'منتظم مستجد', // أو 'طالب قديم'
+                'نوع التسجيل': 'مستجد', // أو 'منتظم'
                 'طريقة الإرسال': 'whatsapp',
                 'السنة الدراسية': '2024-2025'
             };

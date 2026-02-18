@@ -264,7 +264,20 @@ async function loadStudentData() {
                 student = { ...student, ...firebaseStudent };
                 currentStudent = student;
                 studentIdToSave = firebaseStudent.id;
-                showAlreadySignedSimplified(student);
+
+                // Ensure text is loaded before showing success
+                if (!contract) {
+                    if (student.contractTitle && student.contractContent) {
+                        contract = { title: student.contractTitle, content: student.contractContent, type: student.contractType || 'text' };
+                    } else {
+                        const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+                        contract = templates.find(c => c.id === student.contractTemplateId) || templates.find(c => c.isDefault) || templates[0];
+                    }
+                }
+
+                if (contract) renderContractText(contract, student);
+
+                showAlreadySignedSimplified(student, false); // False = already signed before
                 return student;
             }
 
@@ -321,77 +334,7 @@ async function loadStudentData() {
         }
 
         if (contract) {
-            const contractTextDiv = document.querySelector('.contract-text');
-            if (contractTextDiv) {
-                const isPdf = (contract.type === 'pdf_template') || (contract.content && contract.content.startsWith('قالب PDF:'));
-
-                if (isPdf && contract.pdfData) {
-                    contractTextDiv.innerHTML = `
-                        <div style="text-align:center; padding: 20px;">
-                            <h3 style="color: var(--primary-color);">${contract.title}</h3>
-                            <div id="pdf-loading-state" style="padding: 40px; background: #f1f5f9; border-radius: 12px; margin-bottom: 20px;">
-                                <div class="loading"></div>
-                                <p style="margin-top: 15px; color: #4a5568; font-weight: bold;">جاري تحضير العقد ببياناتك... يرجى الانتظار</p>
-                            </div>
-                            <div id="pdf-preview-container" style="display:none; border: 2px solid var(--border-color); border-radius: 12px; background: #525659; overflow: auto; max-height: 800px; padding: 10px;">
-                                <canvas id="pdf-preview-canvas" style="max-width: 100%; height: auto;"></canvas>
-                            </div>
-                        </div>
-                    `;
-                    currentStudent.contract = contract;
-                    currentStudent.contractType = 'pdf_template';
-
-                    setTimeout(async () => {
-                        try {
-                            const pdfBytes = await generatePdfFromTemplate(contract, student);
-                            if (pdfBytes) {
-                                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                                const url = window.URL.createObjectURL(blob);
-                                const loadingState = document.getElementById('pdf-loading-state');
-                                if (loadingState) loadingState.style.display = 'none';
-                                const previewContainer = document.getElementById('pdf-preview-container');
-                                if (previewContainer) {
-                                    previewContainer.style.display = 'block';
-                                    previewContainer.innerHTML = `<iframe src="${url}" style="width:100%; height:800px; border:none; border-radius:8px;"></iframe>`;
-                                }
-                            }
-                        } catch (err) {
-                            console.error("PDF Preview failed:", err);
-                        }
-                    }, 100);
-                } else {
-                    let content = contract.content || '';
-                    const cleanVar = (v) => v ? v.replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
-                    const varMappings = {
-                        'اسمالطالب': student.studentName || '',
-                        'اسموليالامر': student.parentName || '',
-                        'الصف': `الصف ${student.studentGrade}`,
-                        'المرحلة': student.studentLevel || '',
-                        'السنةالدراسية': student.contractYear || '',
-                        'هويةالطالب': student.nationalId || '',
-                        'هويةوليالامر': student.parentNationalId || '',
-                        'التاريخ': new Date().toLocaleDateString('ar-SA')
-                    };
-
-                    const foundVars = content.match(/{[^}]+}/g) || [];
-                    foundVars.forEach(v => {
-                        const target = cleanVar(v);
-                        if (varMappings[target] !== undefined) {
-                            content = content.replace(v, varMappings[target]);
-                        }
-                    });
-
-                    const stampImage = window.SCHOOL_STAMP_IMAGE || (JSON.parse(localStorage.getItem('appSettings') || '{}')).stampImage;
-                    const stampHtml = stampImage
-                        ? `<div style="text-align:center; margin:20px 0;"><img src="${stampImage}" style="max-height:100px;"></div>`
-                        : `<div style="text-align:center; margin:20px 0; color:#2563eb; font-weight:bold; border:2px solid #2563eb; width:100px; height:100px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:20px auto;">${window.SCHOOL_STAMP_TEXT || 'الإدارة'}</div>`;
-
-                    currentStudent.cachedContractContent = content;
-                    currentStudent.cachedContractTitle = contract.title;
-                    currentStudent.contractType = 'text';
-                    contractTextDiv.innerHTML = `<h3 style="font-size: 1.15rem; margin-bottom: 0.5rem;">${contract.title}</h3><div style="font-size: 0.92rem; line-height: 1.6;">${content.replace(/\n/g, '<br>')}</div><br>${stampHtml}`;
-                }
-            }
+            renderContractText(contract, student);
         } else {
             const textDiv = document.querySelector('.contract-text');
             if (textDiv) {
@@ -406,6 +349,83 @@ async function loadStudentData() {
     }
     showLoadError();
     return null;
+}
+
+/**
+ * Renders the contract content (Text or PDF) into the viewer
+ */
+function renderContractText(contract, student) {
+    const contractTextDiv = document.querySelector('.contract-text');
+    if (!contractTextDiv) return;
+
+    const isPdf = (contract.type === 'pdf_template') || (contract.content && contract.content.startsWith('قالب PDF:'));
+
+    if (isPdf && contract.pdfData) {
+        contractTextDiv.innerHTML = `
+            <div style="text-align:center; padding: 20px;">
+                <h3 style="color: var(--primary-color);">${contract.title}</h3>
+                <div id="pdf-loading-state" style="padding: 40px; background: #f1f5f9; border-radius: 12px; margin-bottom: 20px;">
+                    <div class="loading"></div>
+                    <p style="margin-top: 15px; color: #4a5568; font-weight: bold;">جاري تحضير العقد ببياناتك... يرجى الانتظار</p>
+                </div>
+                <div id="pdf-preview-container" style="display:none; border: 2px solid var(--border-color); border-radius: 12px; background: #525659; overflow: auto; max-height: 800px; padding: 10px;">
+                    <canvas id="pdf-preview-canvas" style="max-width: 100%; height: auto;"></canvas>
+                </div>
+            </div>
+        `;
+        currentStudent.contract = contract;
+        currentStudent.contractType = 'pdf_template';
+
+        setTimeout(async () => {
+            try {
+                const pdfBytes = await generatePdfFromTemplate(contract, student);
+                if (pdfBytes) {
+                    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                    const url = window.URL.createObjectURL(blob);
+                    const loadingState = document.getElementById('pdf-loading-state');
+                    if (loadingState) loadingState.style.display = 'none';
+                    const previewContainer = document.getElementById('pdf-preview-container');
+                    if (previewContainer) {
+                        previewContainer.style.display = 'block';
+                        previewContainer.innerHTML = `<iframe src="${url}" style="width:100%; height:800px; border:none; border-radius:8px;"></iframe>`;
+                    }
+                }
+            } catch (err) {
+                console.error("PDF Preview failed:", err);
+            }
+        }, 100);
+    } else {
+        let content = contract.content || '';
+        const cleanVar = (v) => v ? v.replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
+        const varMappings = {
+            'اسمالطالب': student.studentName || '',
+            'اسموليالامر': student.parentName || '',
+            'الصف': student.studentGrade ? `الصف ${student.studentGrade}` : '',
+            'المرحلة': student.studentLevel || '',
+            'السنةالدراسية': student.contractYear || '',
+            'هويةالطالب': student.nationalId || '',
+            'هويةوليالامر': student.parentNationalId || '',
+            'التاريخ': new Date().toLocaleDateString('ar-SA')
+        };
+
+        const foundVars = content.match(/{[^}]+}/g) || [];
+        foundVars.forEach(v => {
+            const target = cleanVar(v);
+            if (varMappings[target] !== undefined) {
+                content = content.replace(v, varMappings[target]);
+            }
+        });
+
+        const stampImage = window.SCHOOL_STAMP_IMAGE || (JSON.parse(localStorage.getItem('appSettings') || '{}')).stampImage;
+        const stampHtml = stampImage
+            ? `<div style="text-align:center; margin:20px 0;"><img src="${stampImage}" style="max-height:100px;"></div>`
+            : `<div style="text-align:center; margin:20px 0; color:#2563eb; font-weight:bold; border:2px solid #2563eb; width:100px; height:100px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:20px auto;">${window.SCHOOL_STAMP_TEXT || 'الإدارة'}</div>`;
+
+        currentStudent.cachedContractContent = content;
+        currentStudent.cachedContractTitle = contract.title;
+        currentStudent.contractType = 'text';
+        contractTextDiv.innerHTML = `<h3 style="font-size: 1.15rem; margin-bottom: 0.5rem;">${contract.title}</h3><div style="font-size: 0.92rem; line-height: 1.6;">${content.replace(/\n/g, '<br>')}</div><br>${stampHtml}`;
+    }
 }
 
 
@@ -432,12 +452,12 @@ function showAlreadySignedSimplified(student, isFirstTime = false) {
         if (card) {
             const isVerified = student.contractStatus === 'verified';
             const icon = isFirstTime ? '🎉' : '✅';
-            const title = isFirstTime ? 'تم التوقيع بنجاح!' : 'العقد موقّع مسبقاً';
+            const title = isFirstTime ? 'تم التوقيع بنجاح!' : 'تم توقيع العقد مسبقاً';
             const subtitle = isFirstTime
                 ? 'شكراً لك! لقد تم استلام توقيعك وحفظه بنجاح في النظام.'
-                : 'لقد قمت بتوقيع هذا العقد مسبقاً، يمكنك تحميل نسخة منه أو طباعته.';
+                : 'هذا العقد قد تم توقيعه وإرساله من قبل. يمكنك تحميل نسخة PDF أو طباعته.';
 
-            const statusLabel = isVerified ? 'موثق ومعتمد ✓' : 'موقع قيد المراجعة';
+            const statusLabel = isVerified ? 'موثق ومعتمد ✓' : 'موقع ومحفوظ';
             const statusColor = isVerified ? '#059669' : '#0284c7';
             const statusBg = isVerified ? '#ecfdf5' : '#f0f9ff';
 
