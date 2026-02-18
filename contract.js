@@ -560,9 +560,14 @@ async function loadStudentData() {
 }
 
 function showAlreadySignedSimplified(student) {
-    document.getElementById('mainContainer').style.display = 'none';
+    const mainContainer = document.getElementById('mainContainer');
     const successContainer = document.getElementById('successContainer');
-    successContainer.style.display = 'block';
+
+    if (!successContainer) {
+        console.error("Success container not found!");
+        if (mainContainer) mainContainer.innerHTML = "<div style='text-align:center; padding:50px;'><h1>تم توقيع العقد مسبقاً</h1></div>";
+        return;
+    }
 
     const card = successContainer.querySelector('.success-card');
     if (card) {
@@ -587,18 +592,31 @@ function showAlreadySignedSimplified(student) {
         `;
     }
 
+    if (mainContainer) mainContainer.style.display = 'none';
+    successContainer.style.display = 'block';
+
     if (student.signature) signatureData = student.signature;
     if (student.idImage) uploadedFile = student.idImage;
     if (student.extraDocs) extraDocs = student.extraDocs; // Load extra docs if available
     currentStudent = student;
 
-    setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
+    // Use a small timeout to ensure DOM is ready for event listeners
+    setTimeout(() => {
+        setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
+    }, 100);
 }
 
+
+
 function showSuccessAfterSigning(student) {
-    document.getElementById('mainContainer').style.display = 'none';
+    const mainContainer = document.getElementById('mainContainer');
     const successContainer = document.getElementById('successContainer');
-    successContainer.style.display = 'block';
+
+    if (!successContainer) {
+        console.error("Success container not found!");
+        alert("تم التوقيع بنجاح.");
+        return;
+    }
 
     const card = successContainer.querySelector('.success-card');
     if (card) {
@@ -623,12 +641,21 @@ function showSuccessAfterSigning(student) {
         `;
     }
 
+    // Hide main container ONLY after updating success container
+    if (mainContainer) mainContainer.style.display = 'none';
+    successContainer.style.display = 'block';
+
     if (student.signature) signatureData = student.signature;
     if (student.idImage) uploadedFile = student.idImage;
     if (student.extraDocs) extraDocs = student.extraDocs; // Load extra docs if available
     currentStudent = student;
 
     setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
+}
+
+// Helper function to print contract
+function printContract() {
+    window.print();
 }
 
 // Helper to get professional PDF/Print HTML
