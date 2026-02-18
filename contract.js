@@ -325,10 +325,25 @@ async function loadStudentData() {
                 const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
                 contract = templates.find(c => c.id === student.contractTemplateId) || templates.find(c => c.isDefault) || templates[0];
 
-                if (!contract && student.contractTemplateId && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+                // Try CloudDB if still no contract (parent won't have local templates)
+                if (!contract && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
                     try {
-                        contract = await CloudDB.getContractTemplate(student.contractTemplateId);
-                    } catch (err) { }
+                        // Try getting template by ID first
+                        if (student.contractTemplateId) {
+                            contract = await CloudDB.getContractTemplate(student.contractTemplateId);
+                        }
+                        // If still nothing, try getting contract data from student record
+                        if (!contract && finalId) {
+                            const cloudStudent = await CloudDB.getStudent(String(finalId));
+                            if (cloudStudent && cloudStudent.contractTitle && cloudStudent.contractContent) {
+                                contract = {
+                                    title: cloudStudent.contractTitle,
+                                    content: cloudStudent.contractContent,
+                                    type: cloudStudent.contractType || 'text'
+                                };
+                            }
+                        }
+                    } catch (err) { console.warn('CloudDB contract fetch failed:', err); }
                 }
             }
         }
@@ -625,8 +640,12 @@ function getContractPdfHtml(studentName, contractNo) {
 }
 
 function setupPdfDownload(studentName, contractNo) {
-    const btn = document.getElementById('downloadPdfBtn');
-    if (!btn) return;
+    const oldBtn = document.getElementById('downloadPdfBtn');
+    if (!oldBtn) return;
+
+    // Clone to remove old listeners and prevent duplicates
+    const btn = oldBtn.cloneNode(true);
+    oldBtn.parentNode.replaceChild(btn, oldBtn);
 
     btn.addEventListener('click', async function () {
         this.disabled = true;
@@ -957,8 +976,20 @@ document.getElementById('submitContract')?.addEventListener('click', async () =>
             }).catch(e => console.warn("Cloud Sync Deferred:", e));
         }
 
-        // 4. Prepare Success Data
+        // 4. Prepare Success Data - CACHE contract content before hiding main view
         const studentName = document.getElementById('contractStudentName')?.textContent || currentStudent?.studentName || 'الطالب';
+
+        // Save contract content before it gets hidden
+        if (!currentStudent.cachedContractContent) {
+            const contractTextEl = document.querySelector('.contract-text');
+            if (contractTextEl) {
+                currentStudent.cachedContractContent = contractTextEl.innerHTML;
+            }
+        }
+        if (!currentStudent.contractTitle) {
+            currentStudent.contractTitle = currentStudent.cachedContractTitle || 'عقد تسجيل طالب';
+        }
+
         const successData = {
             ...currentStudent,
             studentName,

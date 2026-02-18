@@ -1016,7 +1016,7 @@ const UI = {
             template = contractMgr.getContract(templateId) || contractMgr.getDefaultContract();
         } else {
             const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-            template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault);
+            template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
         }
 
         // Ensure contract data is in the cloud as a fallback
@@ -1069,10 +1069,13 @@ const UI = {
             });
         }
 
-        // If it's a text contract, include content
-        if (template && template.type !== 'pdf_template') {
+        // Always include contract title and content when available
+        if (template && template.title) {
             dataToCompress.t = template.title;
-            dataToCompress.c = template.content;
+            // Include content for text contracts (not PDF binary data)
+            if (template.type !== 'pdf_template' && template.content) {
+                dataToCompress.c = template.content;
+            }
         }
 
         const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(dataToCompress));
