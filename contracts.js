@@ -313,8 +313,20 @@ class ContractManager {
         // Load heavy data if missing
         if (!contractTemplate.pdfData && contractTemplate.hasLargePdf) {
             const data = await this.getPdfFromDB(contractTemplate.id);
-            if (data) contractTemplate.pdfData = data;
-            else throw new Error("تعذر تحميل ملف PDF من التخزين المحلي");
+            if (data) {
+                contractTemplate.pdfData = data;
+            } else if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+                // Device Recovery: Try Cloud if IndexedDB is empty
+                const remote = await CloudDB.getContractTemplate(contractTemplate.id);
+                if (remote && remote.pdfData) {
+                    contractTemplate.pdfData = remote.pdfData;
+                    this.savePdfToDB(contractTemplate.id, remote.pdfData); // Background save
+                } else {
+                    throw new Error("تعذر تحميل ملف PDF من التخزين المحلي أو السحابي");
+                }
+            } else {
+                throw new Error("تعذر تحميل ملف PDF من التخزين المحلي");
+            }
         }
 
         if (!contractTemplate.pdfData || !contractTemplate.pdfFields) {

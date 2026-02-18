@@ -88,38 +88,52 @@ class DatabaseManager {
                 }
             }, 5000);
 
-            if (!sessionStorage.getItem('initialSyncDone')) {
-                const localStudents = this.getStudents();
-                const localTemplates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-
-                CloudDB.getStudents().then(cloudStudents => {
-                    if (cloudStudents.length === 0 && localStudents.length > 0) {
-                        console.log('☁️ Syncing students to new cloud...');
-                        CloudDB.syncLocalToCloud();
-                    }
-                });
-
-                CloudDB.getContractTemplates().then(cloudTemplates => {
-                    if (cloudTemplates.length === 0 && localTemplates.length > 0) {
-                        console.log('☁️ Syncing templates to new cloud...');
-                        localTemplates.forEach(t => CloudDB.saveContractTemplate(t));
-                    }
-                });
-
-                sessionStorage.setItem('initialSyncDone', 'true');
-            }
-
-            CloudDB.getSettings().then(cloudSettings => {
-                const localSettings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-                if (!cloudSettings && Object.keys(localSettings).length > 5) {
-                    console.log('☁️ Syncing settings to new cloud...');
-                    CloudDB.saveSettings(localSettings);
-                } else if (cloudSettings) {
-                    console.log('☁️ Settings synced from cloud');
-                    localStorage.setItem('appSettings', JSON.stringify(cloudSettings));
-                    if (typeof UI !== 'undefined' && UI.applyBranding) UI.applyBranding();
+            // 1. Sync Students
+            const localStudents = this.getStudents();
+            CloudDB.getStudents().then(cloudStudents => {
+                if (cloudStudents.length === 0 && localStudents.length > 0) {
+                    CloudDB.syncLocalToCloud();
+                } else if (cloudStudents.length > localStudents.length) {
+                    this.mergeRemoteData(cloudStudents);
                 }
             });
+
+            // 2. Sync Templates
+            CloudDB.getContractTemplates().then(cloudTemplates => {
+                const localTmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+                if (cloudTemplates.length === 0 && localTmpls.length > 0) {
+                    localTmpls.forEach(t => CloudDB.saveContractTemplate(t));
+                } else if (cloudTemplates.length > 0 && (localTmpls.length === 0 || cloudTemplates.length !== localTmpls.length)) {
+                    console.log('☁️ Syncing templates from cloud...');
+                    const processTemplates = async () => {
+                        const updated = [];
+                        for (const t of cloudTemplates) {
+                            if (t.pdfData && t.pdfData.length > 50000 && typeof contractMgr !== 'undefined') {
+                                await contractMgr.savePdfToDB(t.id, t.pdfData);
+                                const lw = { ...t }; delete lw.pdfData; lw.hasLargePdf = true;
+                                updated.push(lw);
+                            } else updated.push(t);
+                        }
+                        localStorage.setItem('contractTemplates', JSON.stringify(updated));
+                        if (typeof contractMgr !== 'undefined') contractMgr.init();
+                        if (typeof UI !== 'undefined' && UI.refreshData) UI.refreshData();
+                    };
+                    processTemplates();
+                }
+            });
+
+            // 3. Sync Settings
+            CloudDB.getSettings().then(cloudSettings => {
+                const localSettings = JSON.parse(localStorage.getItem('appSettings') || '{}');
+                if (cloudSettings) {
+                    localStorage.setItem('appSettings', JSON.stringify(cloudSettings));
+                    if (typeof UI !== 'undefined' && UI.applyBranding) UI.applyBranding();
+                } else if (Object.keys(localSettings).length > 5) {
+                    CloudDB.saveSettings(localSettings);
+                }
+            });
+
+            sessionStorage.setItem('initialSyncDone', 'true');
 
         }
     }
@@ -1147,8 +1161,14 @@ const UI = {
         let template = templateId ? contractMgr.getContract(templateId) : null;
         if (!template) template = contractMgr.getDefaultContract();
 
+        // FAILSAFE: If template still null (e.g. sync hasn't finished), try getting it directly
+        if (!template && templateId) {
+            const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+            template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
+        }
+
         if (!template) {
-            this.showNotification('⚠️ عذراً، لم يتم العثور على قالب العقد لهذا الطالب');
+            this.showNotification('⚠️ عذراً، لم يتم العثور على قالب العقد. يرجى الانتظار قليلاً للمزامنة أو تحديث الصفحة.');
             return;
         }
 

@@ -2,26 +2,12 @@
 const SCHOOL_WHATSAPP = '966590000000';
 const SCHOOL_STAMP_IMG = 'assets/stamp.png';
 const SCHOOL_LOGO = 'assets/logo.png';
-// -----------------------
-const urlParams = new URLSearchParams(window.location.search);
-const compressedData = urlParams.get('c');
-const studentIdFromUrl = urlParams.get('id');
 
-// Inject Embedded Cairo Font for Preview Accuracy
-if (typeof GLOBAL_CAIRO_FONT !== 'undefined' && GLOBAL_CAIRO_FONT) {
-    const fontStyles = `
-        @font-face {
-            font-family: 'CairoEmbedded';
-            src: url(data:font/ttf;base64,${GLOBAL_CAIRO_FONT});
-            font-weight: normal;
-            font-style: normal;
-        }
-        body, .contract-viewer, .contract-text, .btn, .section-title { font-family: 'CairoEmbedded', 'Cairo', sans-serif !important; }
-    `;
-    const styleSheet = document.createElement("style");
-    styleSheet.innerText = fontStyles;
-    document.head.appendChild(styleSheet);
-}
+// Ensure we have a robust way to get URL params
+const getParam = (p) => new URLSearchParams(window.location.search).get(p);
+const compressedData = getParam('c');
+const studentIdFromUrl = getParam('id');
+const finalId = studentIdFromUrl || (compressedData ? 'temp' : null);
 
 // Global State
 let uploadedFile = null;
@@ -312,8 +298,13 @@ async function loadStudentData() {
         document.getElementById('contractYear').textContent = student.contractYear;
         document.getElementById('contractParentName').textContent = student.parentName;
 
+        // Show ID image step by default for unsigned contracts
+        const docsStep = document.getElementById('docsStep');
+        if (docsStep) docsStep.style.display = 'block';
+
         if (student.registrationType === 'mustajid') {
-            document.getElementById('extraDocsSection').style.display = 'block';
+            const extraDocsSection = document.getElementById('extraDocsSection');
+            if (extraDocsSection) extraDocsSection.style.display = 'block';
         }
 
         // Populate Contract Text BEFORE checking status (Critical for PDF generation)
@@ -560,33 +551,34 @@ function safeDate(dateStr) {
     } catch (e) { return '---'; }
 }
 
-function showAlreadySignedSimplified(student) {
+function showAlreadySignedSimplified(student, isFirstTime = false) {
     const mainContainer = document.getElementById('mainContainer');
     const successContainer = document.getElementById('successContainer');
 
     if (!successContainer) {
         console.error("Success container not found!");
-        if (mainContainer) {
-            mainContainer.innerHTML = "<div style='text-align:center; padding:50px; direction:rtl;'><h1>تم توقيع العقد مسبقاً</h1><p>وتم إرسال النسخة للإدارة.</p></div>";
-        }
         return;
     }
 
     try {
         const card = successContainer.querySelector('.success-card');
         if (card) {
+            // Update Icon and Title based on context
+            const icon = isFirstTime ? '🎉' : '📝';
+            const title = isFirstTime ? 'تم التوقيع بنجاح!' : 'تم توقيع العقد مسبقاً';
+            const subtitle = isFirstTime ? 'شكراً لك! تم توقيع العقد وإرساله بنجاح.' : 'تم توقيع هذا العقد وإرساله بنجاح مسبقاً.';
+            const color = isFirstTime ? 'var(--success-gradient)' : 'var(--primary-gradient)';
+
             card.innerHTML = `
-                <div class="success-icon" style="background: var(--success-gradient);">📝</div>
-                <h2 class="success-title">تم توقيع العقد مسبقاً</h2>
-                <p class="success-subtitle" style="margin-bottom: 1rem;">تم توقيع هذا العقد وإرساله بنجاح مسبقاً.</p>
+                <div class="success-icon" style="background: ${color};">${icon}</div>
+                <h2 class="success-title">${title}</h2>
+                <p class="success-subtitle" style="margin-bottom: 1rem;">${subtitle}</p>
                 
                 <div style="background: var(--bg-light); border: 2px solid var(--border-color); border-radius: 16px; padding: 1.5rem; margin-bottom: 2rem; text-align: right; direction: rtl;">
                     <h4 style="margin-top:0; color:var(--primary-color); border-bottom:1px solid #ddd; padding-bottom:8px; margin-bottom:12px;">تفاصيل الطالب</h4>
                     <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--text-muted);">اسم الطالب:</span><span style="font-weight:700;">${student.studentName || '---'}</span></div>
                     <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--text-muted);">المرحلة / الصف:</span><span style="font-weight:700;">${student.studentLevel || '---'} / ${student.studentGrade || '---'}</span></div>
-                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--text-muted);">رقم الهوية:</span><span style="font-weight:700;">${student.customFields?.nationalId || student.nationalId || '---'}</span></div>
                     <div style="display:flex; justify-content:space-between; border-top:1px solid #eee; pt:8px; mt:8px;"><span style="color:var(--text-muted);">رقم العقد:</span><span style="font-weight:800; color:var(--text-dark);">${student.contractNo || '---'}</span></div>
-                    <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-muted);">تاريخ التوقيع:</span><span style="font-weight:800; color:var(--text-dark); direction:ltr;">${safeDate(student.signedAt)}</span></div>
                 </div>
 
                 <div class="success-actions">
@@ -601,7 +593,6 @@ function showAlreadySignedSimplified(student) {
 
     if (mainContainer) {
         mainContainer.style.display = 'none';
-        // Add a class to body to indicate success view
         document.body.classList.add('view-success');
     }
     successContainer.style.display = 'block';
@@ -609,68 +600,18 @@ function showAlreadySignedSimplified(student) {
 
     if (student.signature) signatureData = student.signature;
     if (student.idImage) uploadedFile = student.idImage;
-    if (student.extraDocs) extraDocs = student.extraDocs;
+    if (student.extraDocs) extraDocs = student.extraDocs || [];
     currentStudent = student;
 
-    // Use a small timeout to ensure DOM is ready
     setTimeout(() => {
         if (typeof setupPdfDownload === 'function') {
             setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
         }
-    }, 100);
+    }, 200);
 }
 
 function showSuccessAfterSigning(student) {
-    const mainContainer = document.getElementById('mainContainer');
-    const successContainer = document.getElementById('successContainer');
-
-    if (!successContainer) {
-        console.error("Success container not found!");
-        alert("تم التوقيع بنجاح.");
-        location.reload();
-        return;
-    }
-
-    try {
-        const card = successContainer.querySelector('.success-card');
-        if (card) {
-            card.innerHTML = `
-                <div class="success-icon" style="background: var(--success-gradient);">✓</div>
-                <h2 class="success-title">تم التوقيع بنجاح! 🎉</h2>
-                <p class="success-subtitle" style="margin-bottom: 1rem;">شكراً لك! تم توقيع العقد وإرساله بنجاح.</p>
-                
-                <div style="background: var(--bg-light); border: 2px solid var(--border-color); border-radius: 16px; padding: 1.5rem; margin-bottom: 2rem; text-align: right; direction: rtl;">
-                    <h4 style="margin-top:0; color:var(--primary-color); border-bottom:1px solid #ddd; padding-bottom:8px; margin-bottom:12px;">تفاصيل الطالب</h4>
-                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--text-muted);">اسم الطالب:</span><span style="font-weight:700;">${student.studentName || '---'}</span></div>
-                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--text-muted);">المرحلة / الصف:</span><span style="font-weight:700;">${student.studentLevel || '---'} / ${student.studentGrade || '---'}</span></div>
-                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:var(--text-muted);">رقم الهوية:</span><span style="font-weight:700;">${student.customFields?.nationalId || student.nationalId || '---'}</span></div>
-                    <div style="display:flex; justify-content:space-between; border-top:1px solid #eee; pt:8px; mt:8px;"><span style="color:var(--text-muted);">رقم العقد:</span><span style="font-weight:800; color:var(--text-dark);">${student.contractNo || '---'}</span></div>
-                    <div style="display:flex; justify-content:space-between;"><span style="color:var(--text-muted);">تاريخ التوقيع:</span><span style="font-weight:800; color:var(--text-dark); direction:ltr;">${safeDate(student.signedAt)}</span></div>
-                </div>
-
-                <div class="success-actions">
-                    <button id="downloadPdfBtn" class="btn btn-primary btn-large" style="width:100%">📥 تحميل العقد المكتمل (PDF)</button>
-                    <button class="btn btn-secondary" onclick="printContract()" style="width:100%; margin-top:1rem;">🖨️ طباعة العقد</button>
-                </div>
-            `;
-        }
-    } catch (e) {
-        console.error("Error rendering success after signing:", e);
-    }
-
-    if (mainContainer) mainContainer.style.display = 'none';
-    successContainer.style.display = 'block';
-
-    if (student.signature) signatureData = student.signature;
-    if (student.idImage) uploadedFile = student.idImage;
-    if (student.extraDocs) extraDocs = student.extraDocs;
-    currentStudent = student;
-
-    setTimeout(() => {
-        if (typeof setupPdfDownload === 'function') {
-            setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
-        }
-    }, 100);
+    showAlreadySignedSimplified(student, true);
 }
 
 // Make globally accessible
