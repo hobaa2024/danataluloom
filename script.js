@@ -1021,11 +1021,15 @@ const UI = {
 
         // Ensure contract data is in the cloud as a fallback
         if (template && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
-            CloudDB.updateContract(student.id, {
+            const updateData = {
                 contractTitle: template.title,
                 contractContent: template.content,
                 contractType: template.type || 'text'
-            });
+            };
+            if (template.type === 'pdf_template' && template.pdfData) {
+                updateData.pdfData = template.pdfData;
+            }
+            CloudDB.updateContract(student.id, updateData);
         }
 
         const cleanVar = (v) => v ? String(v).replace(/[{}]/g, '').replace(/[ _]/g, '') : '';

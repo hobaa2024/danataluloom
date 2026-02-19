@@ -213,6 +213,7 @@ async function loadStudentData() {
             if (!json) json = decodeURIComponent(compressedData);
             if (json) {
                 const data = JSON.parse(json);
+                console.log('📦 Decompressed URL data keys:', Object.keys(data));
                 student = {
                     id: data.i,
                     studentName: data.s || '',
@@ -242,9 +243,18 @@ async function loadStudentData() {
                     }
                 };
                 studentIdToSave = data.i;
-                if (data.t && data.c) contract = { title: data.t, content: data.c };
+
+                // Save contract title on student for later use
+                if (data.t) student.contractTitle = data.t;
+
+                if (data.t && data.c) {
+                    contract = { title: data.t, content: data.c };
+                    console.log('✅ Contract loaded from URL data, title:', data.t, ', content length:', data.c.length);
+                } else {
+                    console.log('⚠️ URL data missing contract content. title:', data.t || 'NONE', ', content:', data.c ? 'exists' : 'MISSING');
+                }
             }
-        } catch (e) { }
+        } catch (e) { console.error('❌ Error parsing URL data:', e); }
     }
 
     const finalId = studentIdFromUrl || (student ? student.id : null);
@@ -268,7 +278,12 @@ async function loadStudentData() {
                 // Ensure text is loaded before showing success
                 if (!contract) {
                     if (student.contractTitle && student.contractContent) {
-                        contract = { title: student.contractTitle, content: student.contractContent, type: student.contractType || 'text' };
+                        contract = {
+                            title: student.contractTitle,
+                            content: student.contractContent,
+                            type: student.contractType || 'text',
+                            pdfData: student.pdfData || null
+                        };
                     } else {
                         const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
                         contract = templates.find(c => c.id === student.contractTemplateId) || templates.find(c => c.isDefault) || templates[0];
@@ -296,6 +311,17 @@ async function loadStudentData() {
                 student = firebaseStudent;
             }
             studentIdToSave = finalId;
+
+            // If we still don't have contract content, try to get it from Firebase student record
+            if (!contract && firebaseStudent.contractTitle && firebaseStudent.contractContent) {
+                contract = {
+                    title: firebaseStudent.contractTitle,
+                    content: firebaseStudent.contractContent,
+                    type: firebaseStudent.contractType || 'text',
+                    pdfData: firebaseStudent.pdfData || null
+                };
+                console.log('📄 Contract loaded from Firebase student record:', contract.title);
+            }
         }
     }
 
@@ -319,7 +345,8 @@ async function loadStudentData() {
                 contract = {
                     title: student.contractTitle,
                     content: student.contractContent,
-                    type: student.contractType || 'text'
+                    type: student.contractType || 'text',
+                    pdfData: student.pdfData || null
                 };
             } else {
                 const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
@@ -349,8 +376,10 @@ async function loadStudentData() {
         }
 
         if (contract) {
+            console.log('✅ Contract found, rendering. Title:', contract.title, 'Content length:', (contract.content || '').length);
             renderContractText(contract, student);
         } else {
+            console.error('❌ No contract found after all attempts! Student:', student.id, 'TemplateId:', student.contractTemplateId);
             const textDiv = document.querySelector('.contract-text');
             if (textDiv) {
                 textDiv.innerHTML = `<div style="padding:40px; text-align:center;"><h3>عذراً، لم نتمكن من تحميل العقد</h3><p>يرجى مراجعة الإدارة.</p></div>`;
@@ -371,7 +400,14 @@ async function loadStudentData() {
  */
 function renderContractText(contract, student) {
     const contractTextDiv = document.querySelector('.contract-text');
-    if (!contractTextDiv) return;
+    if (!contractTextDiv) { console.error('❌ .contract-text element not found!'); return; }
+
+    console.log('📄 renderContractText called:', {
+        title: contract.title || 'NONE',
+        contentLength: contract.content ? contract.content.length : 0,
+        type: contract.type || 'text',
+        hasPdfData: !!contract.pdfData
+    });
 
     const isPdf = (contract.type === 'pdf_template') || (contract.content && contract.content.startsWith('قالب PDF:'));
 
@@ -518,8 +554,8 @@ function showAlreadySignedSimplified(student, isFirstTime = false) {
                         <button class="btn btn-secondary" onclick="printContract()" style="padding: 1rem; border-radius: 12px; font-weight: 700;">
                             🖨️ طباعة
                         </button>
-                        <button class="btn btn-secondary" onclick="location.reload()" style="padding: 1rem; border-radius: 12px; font-weight: 700;">
-                            🔄 تحديث
+                        <button class="btn btn-secondary" id="viewContractBtn" style="padding: 1rem; border-radius: 12px; font-weight: 700;">
+                            👁️ معاينة العقد
                         </button>
                     </div>
                 </div>
@@ -542,6 +578,40 @@ function showAlreadySignedSimplified(student, isFirstTime = false) {
             setTimeout(() => {
                 if (typeof setupPdfDownload === 'function') {
                     setupPdfDownload(student.studentName, student.contractNo || 'CON-DONE');
+                }
+
+                // Setup View Contract Toggle
+                const viewBtn = document.getElementById('viewContractBtn');
+                if (viewBtn && mainContainer) {
+                    viewBtn.onclick = () => {
+                        successContainer.style.display = 'none';
+                        mainContainer.style.display = 'block';
+                        document.body.classList.remove('view-success');
+
+                        // Add a "Back to Success" button in the main container if not exists
+                        let backBtn = document.getElementById('backToSuccessBtn');
+                        if (!backBtn) {
+                            backBtn = document.createElement('button');
+                            backBtn.id = 'backToSuccessBtn';
+                            backBtn.className = 'btn btn-primary';
+                            backBtn.innerHTML = '🔙 العودة لصفحة الإنجاز';
+                            backBtn.style.cssText = 'position:fixed; bottom:20px; left:20px; z-index:1000; padding:10px 20px; box-shadow:0 4px 12px rgba(0,0,0,0.2);';
+                            backBtn.onclick = () => {
+                                mainContainer.style.display = 'none';
+                                successContainer.style.display = 'block';
+                                document.body.classList.add('view-success');
+                            };
+                            document.body.appendChild(backBtn);
+                        }
+
+                        // Hide interactive elements (signature/uploads) to make it read-only look
+                        const docsStep = document.getElementById('docsStep');
+                        if (docsStep) docsStep.style.display = 'none'; // Hide upload/sign area to avoid confusion
+
+                        // Ensure contract text container uses full width if needed
+                        const contractCard = document.querySelector('.section-card:first-child');
+                        if (contractCard) contractCard.style.maxWidth = '100%';
+                    };
                 }
             }, 200);
         }
