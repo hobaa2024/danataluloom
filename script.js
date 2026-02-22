@@ -906,6 +906,14 @@ const UI = {
                             </button>
                             ` : ''}
 
+                            <button class="action-dropdown-item" onclick="UI.viewStudentHistory('${student.id}')">
+                                <span style="width:20px">📜</span> سجل العقود
+                            </button>
+                            
+                            <button class="action-dropdown-item" onclick="UI.testMigrateStudent('${student.id}')" style="color:#059669">
+                                <span style="width:20px">🧪</span> ترحيل تجريبي
+                            </button>
+
                             <button class="action-dropdown-item" onclick="UI.archiveStudent('${student.id}')" style="color:#6366f1">
                                 <span style="width:20px">📦</span> نقل للأرشيف
                             </button>
@@ -2950,6 +2958,32 @@ ${link}
         }
     },
 
+    bulkArchiveStudents() {
+        const checks = document.querySelectorAll('.student-checkbox:checked');
+        const ids = Array.from(checks).map(cb => cb.value);
+        if (ids.length === 0) {
+            this.showNotification('⚠️ يرجى اختيار طلاب أولاً');
+            return;
+        }
+
+        if (confirm(`هل أنت متأكد من نقل عدد (${ids.length}) طلاب للأرشيف؟`)) {
+            const students = db.getStudents(true);
+            ids.forEach(id => {
+                const student = students.find(s => String(s.id) === String(id));
+                if (student) student.isArchived = true;
+            });
+            db.saveStudents(students);
+            this.renderStudents();
+            this.updateStats();
+            this.refreshArchiveTable();
+            this.showNotification(`✅ تم أرشفة ${ids.length} طلاب بنجاح`);
+
+            // Uncheck header
+            const headerCheck = document.getElementById('selectAllAllStudents');
+            if (headerCheck) headerCheck.checked = false;
+        }
+    },
+
     refreshArchiveTable() {
         const tbody = document.getElementById('archiveTableBody');
         if (!tbody) return;
@@ -3032,6 +3066,46 @@ ${link}
             previewModal.classList.add('active');
             previewModal.style.display = 'flex';
         }
+    },
+
+    testMigrateStudent(id) {
+        if (!confirm('سيتم اعتبار هذا الطالب منتقلاً لسنة دراسية جديدة. سيتم حفظ عقده الحالي في "السجل" وتصفير حالته للبدء من جديد. هل أنت متأكد؟')) return;
+
+        const students = db.getStudents(true);
+        const index = students.findIndex(s => String(s.id) === String(id));
+        if (index === -1) return;
+
+        const student = students[index];
+        const currentYear = student.contractYear || 'سنة حالية';
+
+        // 1. Snapshot the current contract into history
+        if (!student.contractHistory) student.contractHistory = [];
+        student.contractHistory.push({
+            contractYear: currentYear,
+            studentGrade: student.studentGrade || '',
+            studentLevel: student.studentLevel || '',
+            contractTitle: student.contractTitle || 'عقد تجريبي',
+            contractContent: student.contractContent || '',
+            contractType: student.contractType || 'text',
+            pdfData: student.pdfData || null,
+            signature: student.signature || student.signatureData || null,
+            idImage: student.idImage || student.idCardImage || null,
+            signedAt: student.signedAt || new Date().toISOString(),
+            contractStatus: student.contractStatus
+        });
+
+        // 2. Prepare for "Next Year"
+        student.contractStatus = 'pending';
+        student.signature = null;
+        student.signatureData = null;
+        student.idImage = null;
+        student.signedAt = null;
+        student.contractYear = '1447هـ (تجريبي)';
+
+        db.saveStudents(students);
+        this.renderStudents();
+        this.updateStats();
+        this.showNotification('✅ تم الترحيل التجريبي! اضغط الآن على "سجل العقود" لرؤية النتيجة.');
     },
 
     async downloadPastContract(studentId, historyIndex) {
