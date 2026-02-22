@@ -379,6 +379,10 @@ class DatabaseManager {
                     contractYear: student.contractYear || '---',
                     studentGrade: student.studentGrade || '',
                     studentLevel: student.studentLevel || '',
+                    contractTitle: student.contractTitle || 'عقد سجل',
+                    contractContent: student.contractContent || '',
+                    contractType: student.contractType || 'text',
+                    pdfData: student.pdfData || null,
                     signature: student.signature || student.signatureData || null,
                     idImage: student.idImage || student.idCardImage || null,
                     signedAt: student.signedAt || new Date().toISOString(),
@@ -394,15 +398,18 @@ class DatabaseManager {
             if (currentIdx !== -1 && currentIdx < gradesOrder.length - 1) {
                 student.studentGrade = gradesOrder[currentIdx + 1];
                 promotedCount++;
-            } else if (currentIdx === gradesOrder.length - 1) {
+            } else if (currentIdx !== -1 && currentIdx === gradesOrder.length - 1) {
                 // Graduate / Archive the student if they reached the last grade
                 student.isArchived = true;
                 archivedCount++;
+            } else {
+                // FALLBACK: If current grade isn't in system list, we don't know where to promote.
+                // We keep them in same grade but mark status pending for new year below.
             }
 
             // 3. Reset status for new year
             student.contractStatus = 'pending';
-            student.contractYear = nextYearLabel;
+            student.contractYear = nextYearLabel || student.contractYear;
             student.signature = null;
             student.signatureData = null;
             student.idImage = null;
@@ -898,6 +905,10 @@ const UI = {
                                 <span style="width:20px">↩️</span> إلغاء التوقيع
                             </button>
                             ` : ''}
+
+                            <button class="action-dropdown-item" onclick="UI.archiveStudent('${student.id}')" style="color:#6366f1">
+                                <span style="width:20px">📦</span> نقل للأرشيف
+                            </button>
 
                             <div style="border-top:1px solid #f1f5f9; margin:4px 0;"></div>
                             
@@ -2893,7 +2904,8 @@ ${link}
             return;
         }
 
-        if (!confirm(`هل أنت متأكد من بدء ترحيل جميع الطلاب للسنة (${nextYear})؟\n\nستتم أرشفة العقود الحالية وتصفير التواقيع.\nلا يمكن التراجع عن هذه الخطوة بسهولة.`)) {
+        const stats = db.getStats();
+        if (!confirm(`هل أنت متأكد من بدء ترحيل جميع الطلاب للسنة (${nextYear})؟\n\nتنبيه: سيتم أرشفة العقود الحالية لعدد (${stats.signed}) طالب موقع.\nستتم تصفير التواقيع وبدء سنة جديدة.`)) {
             return;
         }
 
@@ -2901,13 +2913,40 @@ ${link}
             this.showNotification('⏳ جاري تنفيذ عملية الترحيل...');
             const result = db.migrateStudents(nextYear);
 
-            this.showNotification(`✅ اكتمل الترحيل: تم ترفيع ${result.promotedCount} طلاب وأرشفة ${result.archivedCount} طلاب.`);
+            this.showNotification(`✅ اكتمل الترحيل: تم ترفيع ${result.promotedCount} طلاب وأرشفة ${result.archivedCount} طلاب متخرجين.`);
             this.renderStudents();
             this.updateStats();
             this.refreshArchiveTable();
         } catch (error) {
             console.error('Migration Error:', error);
             alert('حدث خطأ أثناء الترحيل: ' + error.message);
+        }
+    },
+
+    archiveStudent(id) {
+        if (!confirm('هل أنت متأكد من نقل هذا الطالب للأرشيف؟ لن يظهر في القوائم النشطة.')) return;
+        const students = db.getStudents(true);
+        const student = students.find(s => String(s.id) === String(id));
+        if (student) {
+            student.isArchived = true;
+            db.saveStudents(students);
+            this.renderStudents();
+            this.updateStats();
+            this.showNotification('✅ تم نقل الطالب للأرشيف بنجاح');
+        }
+    },
+
+    unarchiveStudent(id) {
+        if (!confirm('هل تريد إعادة هذا الطالب للقائمة النشطة؟')) return;
+        const students = db.getStudents(true);
+        const student = students.find(s => String(s.id) === String(id));
+        if (student) {
+            student.isArchived = false;
+            db.saveStudents(students);
+            this.renderStudents();
+            this.refreshArchiveTable();
+            this.updateStats();
+            this.showNotification('✅ تم استعادة الطالب للقائمة النشطة');
         }
     },
 
@@ -2931,7 +2970,8 @@ ${link}
                 <td>${student.studentGrade || '-'}</td>
                 <td>
                     <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
-                        <button class="btn btn-secondary btn-sm" onclick="UI.viewStudentHistory('${student.id}')">عرض السجل</button>
+                        <button class="btn btn-secondary btn-sm" onclick="UI.viewStudentHistory('${student.id}')" title="عرض العقود السابقة">📜 السجل</button>
+                        <button class="btn btn-primary btn-sm" onclick="UI.unarchiveStudent('${student.id}')" style="background:#10b981">🔄 استعادة</button>
                         <button class="btn btn-icon" onclick="UI.deleteStudent('${student.id}'); UI.refreshArchiveTable();" style="color: #ef4444;">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
@@ -2963,11 +3003,14 @@ ${link}
                 <div style="border: 1px solid var(--border-color); border-radius: 12px; padding: 1.5rem; background: #fff; box-shadow: var(--shadow-sm);">
                     <div style="display:flex; justify-content:space-between; align-items: center; margin-bottom:1rem; border-bottom: 1px dashed var(--border-color); padding-bottom:0.5rem;">
                         <span style="font-weight:800; font-size: 1.1rem; color:var(--text-primary);">السنة الدراسية: ${h.contractYear}</span>
-                        <span style="background: var(--primary-light); color: var(--primary-main); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700;">موثق في: ${new Date(h.signedAt).toLocaleDateString('ar-SA')}</span>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <button class="btn btn-secondary btn-sm" onclick="UI.downloadPastContract('${student.id}', ${idx})" style="background:#4f46e5; color:white; border:none;">📥 تحميل PDF</button>
+                            <span style="background: var(--primary-light); color: var(--primary-main); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700;">موثق في: ${new Date(h.signedAt).toLocaleDateString('ar-SA')}</span>
+                        </div>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size:0.95rem;">
+                        <div><strong style="color:var(--text-muted)">العقد:</strong> ${h.contractTitle || '-'}</div>
                         <div><strong style="color:var(--text-muted)">الصف:</strong> ${h.studentGrade}</div>
-                        <div><strong style="color:var(--text-muted)">المرحلة:</strong> ${h.studentLevel}</div>
                         <div style="grid-column: 1/-1; margin-top:1rem;">
                             <strong style="display:block; margin-bottom:0.5rem; color:var(--text-muted);">التوقيع المحفوظ:</strong>
                             <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; display: inline-block;">
@@ -2988,6 +3031,53 @@ ${link}
             previewBody.innerHTML = historyHtml;
             previewModal.classList.add('active');
             previewModal.style.display = 'flex';
+        }
+    },
+
+    async downloadPastContract(studentId, historyIndex) {
+        const student = db.getStudents(true).find(s => String(s.id) === String(studentId));
+        if (!student || !student.contractHistory || !student.contractHistory[historyIndex]) return;
+
+        const hist = student.contractHistory[historyIndex];
+        this.showNotification('⏳ جاري تجهيز العقد القديم...');
+
+        // Build a temporary student object for the PDF generator
+        const tempStudent = {
+            ...student,
+            contractTitle: hist.contractTitle,
+            contractContent: hist.contractContent,
+            contractType: hist.contractType,
+            pdfData: hist.pdfData,
+            signature: hist.signature,
+            signedAt: hist.signedAt,
+            contractStatus: hist.contractStatus,
+            studentGrade: hist.studentGrade,
+            contractYear: hist.contractYear
+        };
+
+        if (hist.contractType === 'pdf' && hist.pdfData) {
+            // Regeneration for PDF Template History
+            try {
+                if (typeof contractMgr === 'undefined') throw new Error('Contract Manager not found');
+                const pdfBytes = await contractMgr.generatePdfFromTemplate(tempStudent, tempStudent);
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `عقد_${tempStudent.studentName}_${hist.contractYear}.pdf`;
+                link.click();
+            } catch (err) {
+                console.error('PDF History Download Error:', err);
+                alert('فشل في توليد ملف PDF التاريخي: ' + err.message);
+            }
+        } else {
+            // Text-based contract
+            const oldStudent = window.currentStudent;
+            window.currentStudent = tempStudent;
+            try {
+                this.downloadContractPdf(studentId);
+            } finally {
+                window.currentStudent = oldStudent;
+            }
         }
     }
 };
