@@ -1704,7 +1704,7 @@ const UI = {
         }
     },
 
-    sendContract(id) {
+    async sendContract(id) {
         // Simple WhatsApp Link
         const students = db.getStudents();
         const student = students.find(s => String(s.id) === String(id));
@@ -2217,7 +2217,7 @@ ${link}
         }
     },
 
-    remindParent(id) {
+    async remindParent(id) {
         const student = db.getStudents().find(s => s.id === id);
         if (!student) return;
 
@@ -2530,17 +2530,14 @@ ${link}
         const storedUser = settings?.adminUsername || 'admin';
         const storedPass = settings?.adminPassword || 'admin';
 
-        // Validation Logic
+        // Strict Matching: Security first
         const isMatch = inputUser === storedUser && inputPass === storedPass;
-        const isEmergencyMatch = inputUser === 'admin' && inputPass === 'admin';
 
-        if (isMatch || isEmergencyMatch) {
-            console.log('✅ Login Successful' + (isEmergencyMatch && !isMatch ? ' (Emergency Fallback)' : ''));
+        if (isMatch) {
+            console.log('✅ Login Successful');
 
-            if (isEmergencyMatch && !isMatch) {
-                alert('⚠️ تنبيه: تم تسجيل الدخول باستخدام البيانات الافتراضية للطوارئ.\nيبدو أنه تم تغيير كلمة المرور السابقة أو مزامنتها من السحابة.\nيرجى مراجعة الإعدادات وتعيين كلمة مرور جديدة.');
-            } else if (isEmergencyMatch && isMatch && inputPass === 'admin') {
-                alert('⚠️ تنبيه أمني: أنت تستخدم كلمة المرور الافتراضية "admin".\nيرجى تغييرها من قسم الإعدادات لحماية بياناتك.');
+            if (inputUser === 'admin' && inputPass === 'admin') {
+                alert('⚠️ تنبيه أمني هام:\nأنت تستخدم بيانات الدخول الافتراضية (admin/admin).\nهذا يشكل خطراً أمنياً كبيراً. يرجى التوجه فوراً لقسم الإعدادات وتغيير بيانات الدخول.');
             }
 
             sessionStorage.setItem('isLoggedIn', 'true');
@@ -2550,10 +2547,10 @@ ${link}
             this.populateDynamicSelects();
             this.applyBranding();
         } else {
-            console.warn('❌ Login Failed:', { entered: inputUser, expected: storedUser });
+            console.warn('❌ Login Failed');
             if (errorMsg) {
                 errorMsg.style.display = 'block';
-                errorMsg.innerHTML = `❌ بيانات الدخول غير صحيحة.<br><small style="color:#64748b">تلميح: جرب admin / admin إذا نسيت بياناتك.</small>`;
+                errorMsg.innerHTML = `❌ بيانات الدخول غير صحيحة.`;
             }
             // Shake effect for feedback
             const card = usernameInput.closest('.card');
