@@ -407,22 +407,32 @@ class DatabaseManager {
                 // We keep them in same grade but mark status pending for new year below.
             }
 
-            // 3. Reset status for new year
+            // 3. Reset status for new year (CRITICAL: Clear all old contract data)
             student.contractStatus = 'pending';
             student.contractYear = nextYearLabel || student.contractYear;
             student.signature = null;
             student.signatureData = null;
             student.idImage = null;
             student.signedAt = null;
+            student.contractNo = null;
+            student.idCardImage = null; // Legacy field
+            student.contractTitle = null; // Force refresh on next send
+            student.contractContent = null; // Force refresh on next send
+            student.pdfData = null; // Force refresh on next send
+            student.extraDocs = [];
 
             return student;
         });
 
         this.saveStudents(updatedStudents);
 
-        // Final sync if cloud is ready
+        // Final sync if cloud is ready - use batch update if possible
         if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
-            CloudDB.syncLocalToCloud();
+            this.showNotification('⏳ جاري تحديث السحابة... يرجى عدم إغلاق الصفحة');
+            CloudDB.syncLocalToCloud().then(success => {
+                if (success) this.showNotification('✅ تمت المزامنة مع السحابة بنجاح');
+                else this.showNotification('⚠️ فشل مزامنة بعض البيانات مع السحابة');
+            });
         }
 
         return { promotedCount, archivedCount };
@@ -1038,17 +1048,25 @@ const UI = {
             template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
         }
 
-        // Ensure contract data is in the cloud as a fallback
+        // Ensure contract data is in the cloud as a fallback - CRITICAL for parent view
         if (template && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
             const updateData = {
                 contractTitle: template.title,
-                contractContent: template.content,
-                contractType: template.type || 'text'
+                contractContent: template.content || '',
+                contractType: template.type || 'text',
+                contractTemplateId: template.id,
+                // These must be null to ensure we don't show old year's signature
+                contractStatus: 'pending',
+                signature: null,
+                signedAt: null
             };
             if (template.type === 'pdf_template' && template.pdfData) {
                 updateData.pdfData = template.pdfData;
             }
-            CloudDB.updateContract(student.id, updateData);
+            // Explicitly wait for this or at least log failure
+            CloudDB.updateContract(student.id, updateData).then(success => {
+                if (!success) console.warn("⚠️ Cloud sync failed for student contract data:", student.id);
+            });
         }
 
         const cleanVar = (v) => v ? String(v).replace(/[{}]/g, '').replace(/[ _]/g, '') : '';

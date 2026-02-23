@@ -257,10 +257,13 @@ async function loadStudentData() {
         } catch (e) { console.error('❌ Error parsing URL data:', e); }
     }
 
-    const finalId = studentIdFromUrl || (student ? student.id : null);
+    // Determine Final ID early for Firebase check
+    let finalId = studentIdFromUrl;
+    if (!finalId && student && student.id) finalId = student.id;
 
     // CRITICAL: Always check Firebase FIRST to see if contract was already signed
     if (finalId && finalId !== 'null' && finalId !== 'undefined' && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+        console.log('☁️ Fetching student record for ID:', finalId);
         const firebaseStudent = await CloudDB.getStudent(String(finalId));
 
         if (firebaseStudent) {
@@ -1078,7 +1081,11 @@ document.getElementById('submitContract')?.addEventListener('click', async () =>
         }
     } catch (error) {
         console.error("Submission Error:", error);
-        alert("عذراً، حدث خطأ أثناء الإرسال. يرجى المحاولة مرة أخرى.");
+        let errorMsg = "عذراً، حدث خطأ أثناء الإرسال. يرجى المحاولة مرة أخرى.";
+        if (error.name === 'QuotaExceededError') {
+            errorMsg = "عذراً، ذاكرة المتصفح ممتلئة. يرجى حذف بعض الملفات أو تصفح الصفحة في وضع الخصوصية (Incognito) والمحاولة مرة أخرى.";
+        }
+        alert(errorMsg + "\n\nتفاصيل: " + (error.message || error));
         btn.disabled = false;
         document.getElementById('submitText').innerHTML = 'إرسال العقد الموقع';
     }
