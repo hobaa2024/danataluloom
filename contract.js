@@ -424,7 +424,14 @@ function renderContractText(contract, student) {
                     console.log('✅ PDF data fetched successfully in last-resort');
                     contract.pdfData = remote.pdfData;
                     renderContractText(contract, student);
+                } else {
+                    contractTextDiv.innerHTML = `<div style="padding:40px; text-align:center; color:#e11d48;">
+                        <h3>⚠️ تعذر تحميل ملف العقد</h3>
+                        <p>يرجى التأكد من اتصال الإنترنت أو محاولة تحديث الصفحة.</p>
+                    </div>`;
                 }
+            }).catch(err => {
+                console.error("Cloud fetch failed:", err);
             });
         }
     }
@@ -461,6 +468,12 @@ function renderContractText(contract, student) {
                 }
             } catch (err) {
                 console.error("PDF Preview failed:", err);
+                const loadingState = document.getElementById('pdf-loading-state');
+                if (loadingState) {
+                    loadingState.innerHTML = `<div style="color:#e11d48; font-weight:bold;">
+                        ❌ حدث خطأ أثناء تجهيز العقد:<br>${err.message}
+                    </div>`;
+                }
             }
         }, 100);
     } else {
@@ -1208,8 +1221,8 @@ async function generatePdfFromTemplate(template, studentData) {
             } catch (e) { console.warn("Embedded font failed, trying other sources:", e); }
         }
 
-        // STRATEGY B: Try CloudDB (Firebase)
-        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+        // STRATEGY B: Try CloudDB (Firebase) - Only if still missing
+        if (!cachedCairoFont && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
             try {
                 console.log("☁️ Attempting to load font from CloudDB...");
                 // Try Cairo first, then fallback
@@ -1394,11 +1407,11 @@ async function generatePdfFromTemplate(template, studentData) {
             text = days[new Date().getDay()];
         }
         else if (target === 'التوقيع' || target === 'توقيع' || target === 'مكانالتوقيع') {
-            text = studentData.signature || signatureData;
+            text = studentData.signature || studentData.signatureData || null;
             isImage = true;
         }
         else if (target === 'الهوية' || target === 'مكانالهوية' || target === 'صورةالهوية' || target === 'صورهالهويه') {
-            text = uploadedFile || studentData.idImage || studentData.idCardImage || studentData.uploadedFile || null;
+            text = studentData.idImage || studentData.idCardImage || studentData.uploadedFile || null;
             isImage = true;
         }
         else if (target === 'الختم' || target === 'مكانالختم') {

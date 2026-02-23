@@ -416,7 +416,7 @@ class ContractManager {
 
         for (const field of contractTemplate.pdfFields) {
             const placeholder = field.variable;
-            let text = null; // Start with null to indicate no value found yet
+            let text = null;
             let isImage = false;
             const target = cleanVar(placeholder);
 
@@ -438,12 +438,12 @@ class ContractManager {
             else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
             else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-EG');
             else if (target === 'اليوم') { const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']; text = days[new Date().getDay()]; }
-            else if (target === 'توقيع' || target === 'التوقيع' || target === 'مكانالتوقيع') { text = studentData.signature || studentData.signatureData; isImage = true; }
+            else if (target === 'توقيع' || target === 'التوقيع' || target === 'مكانالتوقيع') { text = studentData.signature || studentData.signatureData || null; isImage = true; }
             else if (target === 'الختم' || target === 'ختمالمدرسة' || target === 'مكانالختم') {
                 const s = (typeof db !== 'undefined' && db.getSettings) ? db.getSettings() : JSON.parse(localStorage.getItem('appSettings') || '{}');
-                text = s.stampImage || window.SCHOOL_STAMP_IMAGE; isImage = true;
+                text = s.stampImage || window.SCHOOL_STAMP_IMAGE || null; isImage = true;
             }
-            else if (target === 'الهوية' || target === 'مكانالهوية' || target === 'صورةالهوية' || target === 'صورهالهويه') { text = studentData.idImage || studentData.idCardImage || studentData.uploadedFile; isImage = true; }
+            else if (target === 'الهوية' || target === 'مكانالهوية' || target === 'صورةالهوية' || target === 'صورهالهويه') { text = studentData.idImage || studentData.idCardImage || studentData.uploadedFile || null; isImage = true; }
             else {
                 // Check custom fields by label (Search in studentData.customFields)
                 if (studentData.customFields && !isImage) {
@@ -464,10 +464,8 @@ class ContractManager {
                 }
             }
 
-            // If no mapping was found, text will be null, so we skip.
-            if (text === null) continue;
-            // If a mapping was found but the value is empty, also skip.
-            if (text === '') continue;
+            // Security: If no mapping was found or value is null/undefined/empty, skip.
+            if (!text || text === '') continue;
 
             const page = pages[field.page - 1];
             if (!page) continue;
