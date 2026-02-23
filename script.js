@@ -290,7 +290,7 @@ class DatabaseManager {
             return;
         }
 
-        const students = this.getStudents();
+        const students = this.getStudents(true);
         const existingIndex = students.findIndex(s => String(s.id) === String(student.id));
         if (student.id && existingIndex !== -1) {
             students[existingIndex] = { ...students[existingIndex], ...student };
@@ -375,6 +375,10 @@ class DatabaseManager {
             // 1. Archive current contract if signed/verified
             if (student.contractStatus === 'signed' || student.contractStatus === 'verified') {
                 if (!student.contractHistory) student.contractHistory = [];
+
+                // Get template to save a snapshot of the fields used at the time
+                const template = student.contractTemplateId ? contractMgr.getContract(student.contractTemplateId) : null;
+
                 student.contractHistory.push({
                     contractYear: student.contractYear || '---',
                     studentGrade: student.studentGrade || '',
@@ -382,7 +386,8 @@ class DatabaseManager {
                     contractTitle: student.contractTitle || 'عقد سجل',
                     contractContent: student.contractContent || '',
                     contractType: student.contractType || 'text',
-                    pdfData: student.pdfData || null,
+                    pdfData: student.pdfData || (template ? template.pdfData : null),
+                    pdfFields: template ? template.pdfFields : null,
                     signature: student.signature || student.signatureData || null,
                     idImage: student.idImage || student.idCardImage || null,
                     signedAt: student.signedAt || new Date().toISOString(),
@@ -1023,7 +1028,7 @@ const UI = {
         };
         return badges[status] || '<span class="status-badge">غير معروف</span>';
     },
-    generateContractLink(student) {
+    async generateContractLink(student) {
         const settings = db.getSettings();
         let basePath = settings.serverAddress || window.location.href.split('?')[0].replace('index.html', '').replace(/\/$/, '');
 
@@ -1043,6 +1048,14 @@ const UI = {
         let template = null;
         if (typeof contractMgr !== 'undefined') {
             template = contractMgr.getContract(templateId) || contractMgr.getDefaultContract();
+            // IMPORTANT: Fetch full PDF data if it's missing from the shortcut object
+            if (template && template.hasLargePdf && !template.pdfData) {
+                try {
+                    template.pdfData = await contractMgr.getPdfFromDB(template.id);
+                } catch (e) {
+                    console.warn("Could not load PDF data for link generation:", e);
+                }
+            }
         } else {
             const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
             template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
@@ -1125,11 +1138,12 @@ const UI = {
         return { link, isLocal, isTooLong: link.length > 4000 };
     },
 
-    copyContractLink(id) {
+    async copyContractLink(id) {
         const student = db.getStudents().find(s => s.id === id);
         if (!student) return;
 
-        const { link, isLocal, isTooLong } = this.generateContractLink(student);
+        this.showNotification('⏳ جاري تجهيز الرابط...');
+        const { link, isLocal, isTooLong } = await this.generateContractLink(student);
 
         if (isLocal) {
             this.showNotification('⚠️ تنبيه: أنت تستخدم رابطاً محلياً، لن يفتح على أجهزة أخرى.');
@@ -1709,8 +1723,8 @@ const UI = {
             : JSON.parse(localStorage.getItem('contractTemplates') || '[]').find(c => c.id === templateId || c.isDefault);
 
         // PDF Template links now work via CloudDB sync
-
-        const { link, isLocal, isTooLong } = this.generateContractLink(student);
+        this.showNotification('⏳ جاري تحضير الرابط والمزامنة...');
+        const { link, isLocal, isTooLong } = await this.generateContractLink(student);
 
         if (isLocal) {
             alert('⚠️ تنبيه: أنت تقوم بإرسال رابط محلي (localhost). هذا الرابط لن يفتح لدى ولي الأمر إلا إذا كان في نفس شبكة الواي فاي أو كان الموقع مرفوعاً على الإنترنت.');
@@ -2214,9 +2228,8 @@ ${link}
         }
 
         const settings = db.getSettings();
-        const baseUrl = settings.serverAddress || window.location.origin;
-        // Construct Link
-        const link = `${baseUrl}/contract.html?d=${this.generateContractLink(student)}`;
+        this.showNotification('⏳ جاري تحضير رابط التذكير...');
+        const { link } = await this.generateContractLink(student);
 
         const message = `تذكير: مرحباً ${student.parentName}،%0a%0aنرجو التكرم بتوقيع عقد الطالب *${student.studentName}* لاستكمال إجراءات التسجيل.%0a%0aرابط العقد:%0a${encodeURIComponent(link)}`;
 
@@ -2604,63 +2617,60 @@ ${link}
                 let importedCount = 0;
 
                 jsonData.forEach((row, index) => {
-                    // Auto-assign contract based on track
-                    const track = (row['المسار'] || row['Track'] || '').trim().toLowerCase();
+                    // Robust Helper: Match headers ignoring spaces, case, and Arabic Hamzas
+                    const getVal = (possibleHeaders) => {
+                        const normalize = (s) => String(s || '').trim().replace(/[أإآ]/g, 'ا').toLowerCase();
+                        const normalizedPossible = possibleHeaders.map(normalize);
+
+                        // Find first matching key in row
+                        const actualKey = Object.keys(row).find(rk => normalizedPossible.includes(normalize(rk)));
+                        return actualKey !== undefined ? String(row[actualKey]).trim() : '';
+                    };
+
+                    const trackValue = getVal(['المسار', 'مسار', 'النباهة', 'Track']);
+                    const trackLower = trackValue.toLowerCase();
                     let assignedContractId = null;
 
-                    if (track.includes('دبلوم') || track.includes('diploma')) {
-                        if (!diplomaContractId) {
-                            errors.push(`- الصف ${index + 2}: تم تحديد مسار "الدبلومة" ولكن لم يتم ربط عقد له في الإعدادات.`);
-                        } else if (typeof contractMgr !== 'undefined' && !contractMgr.getContract(diplomaContractId)) {
-                            errors.push(`- الصف ${index + 2}: عقد الدبلومة المحدد في الإعدادات (ID: ${diplomaContractId}) غير موجود في النظام.`);
-                        }
+                    if (trackLower.includes('دبلوم') || trackLower.includes('diploma')) {
                         assignedContractId = diplomaContractId;
-                    } else if (track.includes('أهلي') || track.includes('ثنائي') || track.includes('national') || track.includes('bilingual')) {
-                        if (!nationalContractId) {
-                            errors.push(`- الصف ${index + 2}: تم تحديد مسار "الأهلي" ولكن لم يتم ربط عقد له في الإعدادات.`);
-                        } else if (typeof contractMgr !== 'undefined' && !contractMgr.getContract(nationalContractId)) {
-                            errors.push(`- الصف ${index + 2}: عقد الأهلي المحدد في الإعدادات (ID: ${nationalContractId}) غير موجود في النظام.`);
-                        }
+                    } else if (trackLower.includes('أهلي') || trackLower.includes('اهلي') || trackLower.includes('ثنائي') || trackLower.includes('national') || trackLower.includes('bilingual')) {
                         assignedContractId = nationalContractId;
                     }
 
-                    if (track && !assignedContractId) {
-                        errors.push(`- الصف ${index + 2}: المسار "${row['المسار']}" غير معروف أو لم يتم تعيين عقد له في الإعدادات.`);
-                    }
-
-                    // Collect all custom fields from Excel
+                    // Collect custom fields
                     const customFields = {};
                     (settings.customFields || []).forEach(fieldDef => {
-                        const excelHeader = fieldDef.label;
-                        if (row[excelHeader]) {
-                            customFields[fieldDef.id] = row[excelHeader];
-                        }
+                        const val = getVal([fieldDef.label]);
+                        if (val) customFields[fieldDef.id] = val;
                     });
-                    customFields.studentTrack = row['المسار'] || row['Track'] || '';
 
                     const student = {
-                        studentName: row['اسم الطالب'] || row['Name'] || '',
-                        parentName: row['اسم ولي الأمر'] || row['ولي الأمر'] || row['Parent'] || '',
-                        parentEmail: row['البريد الإلكتروني'] || row['البريد'] || row['Email'] || '',
-                        parentWhatsapp: String(row['رقم الواتساب'] || row['الجوال'] || row['WhatsApp'] || ''),
-                        studentLevel: row['المرحلة'] || row['Level'] || '',
-                        studentGrade: row['الصف'] || row['Grade'] || '',
-                        studentTrack: row['المسار'] || row['Track'] || '',
-                        nationalId: String(row['هوية الطالب'] || row['الهوية'] || row['سجل'] || row['Id'] || ''),
-                        parentNationalId: String(row['هوية ولي الأمر'] || row['ParentID'] || ''),
-                        contractYear: row['السنة الدراسية'] || row['السنة'] || row['Year'] || new Date().getFullYear().toString(),
-                        sendMethod: row['طريقة الإرسال'] || row['SendMethod'] || 'whatsapp',
-                        registrationType: (row['نوع التسجيل'] === 'طالب قديم' || row['نوع التسجيل'] === 'منتظم') ? 'existing' : 'mustajid',
-                        nationality: row['الجنسية'] || row['Nationality'] || '',
-                        contractStatus: 'pending', // Default to pending
+                        studentId: Date.now().toString() + index, // Temp ID
+                        studentName: getVal(['اسم الطالب', 'الاسم', 'Name']),
+                        parentName: getVal(['اسم ولي الأمر', 'اسم ولي الامر', 'ولي الأمر', 'ولي الامر', 'Parent Name', 'Parent']),
+                        parentEmail: getVal(['البريد الإلكتروني', 'البريد الالكتروني', 'الإيميل', 'الايميل', 'Email']),
+                        parentWhatsapp: getVal(['رقم الواتساب', 'رقم الواتس', 'الجوال', 'رقم الجوال', 'WhatsApp', 'Phone']),
+                        studentLevel: getVal(['المرحلة', 'المرحله', 'Level']),
+                        studentGrade: getVal(['الصف', 'الصف الدراسي', 'Grade']),
+                        studentTrack: trackValue,
+                        nationalId: getVal(['هوية الطالب', 'هوية الطالب', 'الهوية', 'سجل المدني', 'الرقم القومي', 'National ID', 'Id']),
+                        parentNationalId: getVal(['هوية ولي الأمر', 'هوية ولي الامر', 'سجل ولي الأمر', 'Parent ID', 'ParentID']),
+                        contractYear: getVal(['السنة الدراسية', 'السنه الدراسيه', 'السنة', 'Year']) || new Date().getFullYear().toString(),
+                        sendMethod: getVal(['طريقة الإرسال', 'طريقة الارسال', 'SendMethod']) || 'whatsapp',
+                        registrationType: (getVal(['نوع التسجيل']).includes('قديم') || getVal(['نوع التسجيل']).includes('منتظم')) ? 'existing' : 'mustajid',
+                        nationality: getVal(['الجنسية', 'Nationality']) || 'سعودي',
+                        contractStatus: 'pending',
                         contractTemplateId: assignedContractId,
                         customFields: customFields
                     };
-                    // Ensure consistency
-                    student.customFields.registrationType = student.registrationType;
+
+                    // Ensure key fields are in customFields for display
+                    student.customFields.studentTrack = student.studentTrack;
                     student.customFields.nationalId = student.nationalId;
                     student.customFields.parentNationalId = student.parentNationalId;
-                    student.customFields.nationality = student.nationality;
+                    student.customFields.registrationType = student.registrationType;
+                    student.customFields.studentGrade = student.studentGrade;
+                    student.customFields.studentLevel = student.studentLevel;
 
                     if (student.studentName) {
                         db.saveStudent(student);
@@ -2955,7 +2965,7 @@ ${link}
         const student = students.find(s => String(s.id) === String(id));
         if (student) {
             student.isArchived = true;
-            db.saveStudents(students);
+            db.saveStudent(student); // This handles both local and cloud sync
             this.renderStudents();
             this.updateStats();
             this.showNotification('✅ تم نقل الطالب للأرشيف بنجاح');
@@ -2968,7 +2978,7 @@ ${link}
         const student = students.find(s => String(s.id) === String(id));
         if (student) {
             student.isArchived = false;
-            db.saveStudents(students);
+            db.saveStudent(student); // This handles both local and cloud sync
             this.renderStudents();
             this.refreshArchiveTable();
             this.updateStats();
@@ -2994,6 +3004,12 @@ ${link}
             this.renderStudents();
             this.updateStats();
             this.refreshArchiveTable();
+
+            // Sync all to Cloud if ready
+            if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+                CloudDB.syncLocalToCloud();
+            }
+
             this.showNotification(`✅ تم أرشفة ${ids.length} طلاب بنجاح`);
 
             // Uncheck header
@@ -3098,6 +3114,8 @@ ${link}
 
         // 1. Snapshot the current contract into history
         if (!student.contractHistory) student.contractHistory = [];
+        const template = student.contractTemplateId ? contractMgr.getContract(student.contractTemplateId) : null;
+
         student.contractHistory.push({
             contractYear: currentYear,
             studentGrade: student.studentGrade || '',
@@ -3105,11 +3123,13 @@ ${link}
             contractTitle: student.contractTitle || 'عقد تجريبي',
             contractContent: student.contractContent || '',
             contractType: student.contractType || 'text',
-            pdfData: student.pdfData || null,
+            pdfData: student.pdfData || (template ? template.pdfData : null),
+            pdfFields: template ? template.pdfFields : null,
             signature: student.signature || student.signatureData || null,
             idImage: student.idImage || student.idCardImage || null,
             signedAt: student.signedAt || new Date().toISOString(),
-            contractStatus: student.contractStatus
+            contractStatus: student.contractStatus,
+            contractTemplateId: student.contractTemplateId || ''
         });
 
         // 2. Prepare for "Next Year"
@@ -3147,11 +3167,22 @@ ${link}
             contractYear: hist.contractYear
         };
 
-        if (hist.contractType === 'pdf' && hist.pdfData) {
+        if (hist.contractType === 'pdf_template' || (hist.contractType === 'pdf' && hist.pdfData)) {
             // Regeneration for PDF Template History
             try {
                 if (typeof contractMgr === 'undefined') throw new Error('Contract Manager not found');
-                const pdfBytes = await contractMgr.generatePdfFromTemplate(tempStudent, tempStudent);
+
+                // Construct a mock template object from history
+                const mockTemplate = {
+                    id: hist.contractTemplateId || 'history',
+                    title: hist.contractTitle,
+                    content: hist.contractContent,
+                    type: 'pdf_template',
+                    pdfData: hist.pdfData,
+                    pdfFields: hist.pdfFields || []
+                };
+
+                const pdfBytes = await contractMgr.generatePdfFromTemplate(mockTemplate, tempStudent);
                 const blob = new Blob([pdfBytes], { type: 'application/pdf' });
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);

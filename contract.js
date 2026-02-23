@@ -369,7 +369,8 @@ async function loadStudentData() {
                                 contract = {
                                     title: cloudStudent.contractTitle,
                                     content: cloudStudent.contractContent,
-                                    type: cloudStudent.contractType || 'text'
+                                    type: cloudStudent.contractType || 'text',
+                                    pdfData: cloudStudent.pdfData || null
                                 };
                             }
                         }
@@ -413,6 +414,20 @@ function renderContractText(contract, student) {
     });
 
     const isPdf = (contract.type === 'pdf_template') || (contract.content && contract.content.startsWith('قالب PDF:'));
+
+    // FALLBACK: If it's a PDF but data is missing, try fetching it from CloudDB
+    if (isPdf && !contract.pdfData && student.contractTemplateId) {
+        console.log('🔄 PDF data missing, attempting last-resort fetch from cloud...');
+        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+            CloudDB.getContractTemplate(student.contractTemplateId).then(remote => {
+                if (remote && remote.pdfData) {
+                    console.log('✅ PDF data fetched successfully in last-resort');
+                    contract.pdfData = remote.pdfData;
+                    renderContractText(contract, student);
+                }
+            });
+        }
+    }
 
     if (isPdf && contract.pdfData) {
         contractTextDiv.innerHTML = `
