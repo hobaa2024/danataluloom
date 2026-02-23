@@ -152,6 +152,29 @@
             background: #fee2e2;
             color: #991b1b;
         }
+
+        @keyframes shake {
+
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+
+            10%,
+            30%,
+            50%,
+            70%,
+            90% {
+                transform: translateX(-5px);
+            }
+
+            20%,
+            40%,
+            60%,
+            80% {
+                transform: translateX(5px);
+            }
+        }
     </style>
 
     <!-- Libraries -->
@@ -258,8 +281,13 @@
                 دخول النظام
             </button>
             <p id="loginError"
-                style="color: #ef4444; margin-top: 1.5rem; display: none; font-weight: bold; padding: 0.75rem; background: #fee2e2; border-radius: 10px; border: 1px solid #fecaca;">
+                style="color: #ef4444; margin-top: 1.5rem; display: none; font-weight: bold; padding: 0.75rem; background: #fee2e2; border-radius: 10px; border: 1px solid #fecaca; font-size: 0.9rem;">
                 ⚠️ بيانات الدخول غير صحيحة</p>
+
+            <p style="color: #94a3b8; font-size: 0.8rem; margin-top: 1.5rem; line-height: 1.4;">
+                إذا واجهت مشكلة في الدخول، استخدم البيانات الافتراضية للتعافي:<br>
+                <span style="color: #667eea; font-weight: bold;">admin / admin</span>
+            </p>
         </div>
     </div>
     <!-- Navigation -->

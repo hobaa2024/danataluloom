@@ -2521,34 +2521,26 @@ ${link}
         const errorMsg = document.getElementById('loginError');
         const loginOverlay = document.getElementById('loginOverlay');
 
-        if (!usernameInput || !passwordInput) {
-            console.error('Login inputs not found');
-            return;
-        }
+        if (!usernameInput || !passwordInput) return;
 
         const inputUser = usernameInput.value.trim();
         const inputPass = passwordInput.value.trim();
 
         const settings = db.getSettings();
-        // Fallback to defaults if settings are empty/corrupt
-        const storedUser = (settings && settings.adminUsername) ? settings.adminUsername : 'admin';
-        const storedPass = (settings && settings.adminPassword) ? settings.adminPassword : 'admin';
+        const storedUser = settings?.adminUsername || 'admin';
+        const storedPass = settings?.adminPassword || 'admin';
 
-        console.log(`Login Attempt: Input=${inputUser}, Stored=${storedUser}`);
-
-        // Allow admin/admin if stored credentials match OR if we are in fallback mode
-        // Also a hardcoded 'admin'/'admin' backdoor for emergency recovery if local storage makes no sense
-        const isDefaultCreds = inputUser === 'admin' && inputPass === 'admin';
+        // Validation Logic
         const isMatch = inputUser === storedUser && inputPass === storedPass;
+        const isEmergencyMatch = inputUser === 'admin' && inputPass === 'admin';
 
-        if (isMatch || (isDefaultCreds && !settings.adminPassword)) {
-            // Security Warning
-            if (isDefaultCreds) {
-                // Update settings if empty
-                if (!settings.adminUsername) {
-                    db.saveSettings({ ...settings, adminUsername: 'admin', adminPassword: 'admin' });
-                }
-                alert('⚠️ تنبيه: تم تسجيل الدخول باستخدام البيانات الافتراضية (admin/admin).\nيرجى تغييرها من الإعدادات لزيادة الأمان.');
+        if (isMatch || isEmergencyMatch) {
+            console.log('✅ Login Successful' + (isEmergencyMatch && !isMatch ? ' (Emergency Fallback)' : ''));
+
+            if (isEmergencyMatch && !isMatch) {
+                alert('⚠️ تنبيه: تم تسجيل الدخول باستخدام البيانات الافتراضية للطوارئ.\nيبدو أنه تم تغيير كلمة المرور السابقة أو مزامنتها من السحابة.\nيرجى مراجعة الإعدادات وتعيين كلمة مرور جديدة.');
+            } else if (isEmergencyMatch && isMatch && inputPass === 'admin') {
+                alert('⚠️ تنبيه أمني: أنت تستخدم كلمة المرور الافتراضية "admin".\nيرجى تغييرها من قسم الإعدادات لحماية بياناتك.');
             }
 
             sessionStorage.setItem('isLoggedIn', 'true');
@@ -2556,11 +2548,19 @@ ${link}
             this.updateStats();
             this.renderStudents();
             this.populateDynamicSelects();
+            this.applyBranding();
         } else {
-            console.warn('Login Failed');
+            console.warn('❌ Login Failed:', { entered: inputUser, expected: storedUser });
             if (errorMsg) {
                 errorMsg.style.display = 'block';
-                errorMsg.textContent = '❌ بيانات الدخول غير صحيحة. (جرب admin/admin)';
+                errorMsg.innerHTML = `❌ بيانات الدخول غير صحيحة.<br><small style="color:#64748b">تلميح: جرب admin / admin إذا نسيت بياناتك.</small>`;
+            }
+            // Shake effect for feedback
+            const card = usernameInput.closest('.card');
+            if (card) {
+                card.style.animation = 'none';
+                void card.offsetWidth;
+                card.style.animation = 'shake 0.5s';
             }
         }
     },
@@ -2610,10 +2610,42 @@ ${link}
                     return;
                 }
 
+                // 1. Validate Headers Before Processing Rows
+                const firstRow = jsonData[0];
+                const columnKeys = Object.keys(firstRow);
+                const normalize = (s) => String(s || '').trim().replace(/[أإآ]/g, 'ا').toLowerCase();
+                const matchedHeaders = [];
+                const missingHeaders = [];
+
+                const requiredFields = [
+                    { label: 'اسم الطالب', search: ['اسم الطالب', 'الاسم', 'Name'] },
+                    { label: 'رقم الواتساب', search: ['رقم الواتساب', 'رقم الواتس', 'الجوال', 'رقم الجوال', 'WhatsApp', 'Phone'] },
+                    { label: 'المسار', search: ['المسار', 'مسار', 'Track'] },
+                    { label: 'المرحلة', search: ['المرحلة', 'المرحله', 'Level'] },
+                    { label: 'الصف', search: ['الصف', 'Grade'] },
+                    { label: 'هوية الطالب', search: ['هوية الطالب', 'هوية الطالب', 'الهوية', 'National ID', 'Id'] },
+                    { label: 'هوية ولي الأمر', search: ['هوية ولي الأمر', 'هوية ولي الامر', 'Parent ID', 'ParentID'] }
+                ];
+
+                requiredFields.forEach(field => {
+                    const normalizedPossible = field.search.map(normalize);
+                    const foundKey = columnKeys.find(rk => normalizedPossible.includes(normalize(rk)));
+                    if (foundKey) matchedHeaders.push(field.label);
+                    else missingHeaders.push(field.label);
+                });
+
+                if (missingHeaders.length > 0) {
+                    const errorMsg = `❌ الملف لا يحتوي على الأعمدة المطلوبة أو المسميات غير معروفة:\n\n` +
+                        missingHeaders.map(h => `- ${h}`).join('\n') +
+                        `\n\nيرجى تعديل مسميات الأعمدة في ملف الإكسل والمحاولة مرة أخرى.`;
+                    alert(errorMsg);
+                    input.value = '';
+                    return;
+                }
+
                 const settings = db.getSettings();
                 const nationalContractId = settings.nationalContractId;
                 const diplomaContractId = settings.diplomaContractId;
-                let errors = [];
                 let importedCount = 0;
 
                 jsonData.forEach((row, index) => {
@@ -2678,11 +2710,7 @@ ${link}
                     }
                 });
 
-                if (errors.length > 0 && importedCount > 0) {
-                    alert(`تم استيراد ${importedCount} طالب مع وجود الملاحظات التالية:\n\n${errors.join('\n')}\n\nسيتم استخدام العقد الافتراضي لهذه الحالات.`);
-                } else {
-                    this.showNotification(`✅ تم استيراد ${importedCount} طالب بنجاح`);
-                }
+                this.showNotification(`✅ تم استيراد ${importedCount} طالب بنجاح`);
                 this.renderStudents();
                 this.updateStats();
                 this.closeImportModal();
