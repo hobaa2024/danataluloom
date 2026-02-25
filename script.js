@@ -44,98 +44,79 @@ class DatabaseManager {
             console.log('☁️ Connecting to Firebase...');
             this.updateCloudStatus('connecting');
 
-            // Monitor actual connection state
+            // 1. Monitor actual connection state
             CloudDB.monitorConnection((isConnected) => {
-                if (!isConnected) {
-                    // Only show connecting if we are not already in error state
+                if (isConnected) {
+                    this.updateCloudStatus('online');
+                } else {
                     console.log('🔥 Disconnected from Firebase');
+                    this.updateCloudStatus('offline');
                 }
             });
 
+            // 2. Real-time Student Listener
             CloudDB.listenForUpdates(remoteStudents => {
                 this.updateCloudStatus('online');
-                this.mergeRemoteData(remoteStudents);
+                if (remoteStudents.length === 0 && this.getStudents().length > 0) {
+                    // One-time sync: if cloud is empty but local has data
+                    CloudDB.syncLocalToCloud();
+                } else {
+                    this.mergeRemoteData(remoteStudents);
+                }
             }, (error) => {
                 console.error("Sync Error:", error);
                 this.updateCloudStatus('offline');
-                if (typeof UI !== 'undefined' && UI.showNotification) {
-                    let msg = error.code === 'PERMISSION_DENIED' ? 'خطأ: لا تملك صلاحية الوصول (تحقق من Rules)' : 'خطأ في المزامنة';
-                    UI.showNotification('⚠️ ' + msg);
-                }
             });
 
-            // NEW: Run a health check to verify permissions
-            CloudDB.runHealthCheck().then(result => {
-                if (result.success) {
-                    console.log('✅ Firebase Health Check Passed. Permissions are OK.');
-                    // The listenForUpdates will handle the 'online' status
-                }
-            }).catch(error => {
-                console.error('🔥 Firebase Health Check FAILED:', error);
-                this.updateCloudStatus('offline');
-                if (error.code === 'PERMISSION_DENIED') {
-                    UI.showPermanentError(
-                        'فشل الاتصال بالسحابة: صلاحيات الوصول مرفوضة',
-                        'يبدو أن قواعد الأمان (Security Rules) في Firebase قد انتهت صلاحيتها. هذا يمنع المزامنة وعمل فورم جوجل. يرجى الذهاب إلى لوحة تحكم Firebase وتحديث القواعد.'
-                    );
-                }
-            });
-
-            // Check connectivity
-            setTimeout(() => {
-                if (!CloudDB.isReady()) {
-                    this.updateCloudStatus('offline');
-                }
-            }, 5000);
-
-            // 1. Sync Students
-            const localStudents = this.getStudents();
-            CloudDB.getStudents().then(cloudStudents => {
-                if (cloudStudents.length === 0 && localStudents.length > 0) {
-                    CloudDB.syncLocalToCloud();
-                } else if (cloudStudents.length > localStudents.length) {
-                    this.mergeRemoteData(cloudStudents);
-                }
-            });
-
-            // 2. Sync Templates
-            CloudDB.getContractTemplates().then(cloudTemplates => {
-                const localTmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-                if (cloudTemplates.length === 0 && localTmpls.length > 0) {
-                    localTmpls.forEach(t => CloudDB.saveContractTemplate(t));
-                } else if (cloudTemplates.length > 0 && (localTmpls.length === 0 || cloudTemplates.length !== localTmpls.length)) {
-                    console.log('☁️ Syncing templates from cloud...');
-                    const processTemplates = async () => {
-                        const updated = [];
-                        for (const t of cloudTemplates) {
-                            if (t.pdfData && t.pdfData.length > 50000 && typeof contractMgr !== 'undefined') {
-                                await contractMgr.savePdfToDB(t.id, t.pdfData);
-                                const lw = { ...t }; delete lw.pdfData; lw.hasLargePdf = true;
-                                updated.push(lw);
-                            } else updated.push(t);
-                        }
-                        localStorage.setItem('contractTemplates', JSON.stringify(updated));
-                        if (typeof contractMgr !== 'undefined') contractMgr.init();
-                        if (typeof UI !== 'undefined' && UI.refreshData) UI.refreshData();
-                    };
-                    processTemplates();
-                }
-            });
-
-            // 3. Sync Settings
-            CloudDB.getSettings().then(cloudSettings => {
+            // 3. Real-time Settings Listener
+            CloudDB.listenForSettings(cloudSettings => {
                 const localSettings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-                if (cloudSettings) {
+                if (JSON.stringify(cloudSettings) !== JSON.stringify(localSettings)) {
+                    console.log('☁️ Settings updated from cloud');
                     localStorage.setItem('appSettings', JSON.stringify(cloudSettings));
-                    if (typeof UI !== 'undefined' && UI.applyBranding) UI.applyBranding();
-                } else if (Object.keys(localSettings).length > 5) {
-                    CloudDB.saveSettings(localSettings);
+                    if (typeof UI !== 'undefined') {
+                        if (UI.applyBranding) UI.applyBranding();
+                        if (UI.populateDynamicSelects) UI.populateDynamicSelects();
+                        if (window.location.href.includes('settings.html') && UI.loadSettingsPage) UI.loadSettingsPage();
+                    }
+                }
+            });
+
+            // 4. Real-time Templates Listener
+            CloudDB.listenForTemplates(cloudTemplates => {
+                const localTmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+                // If local is currently empty and cloud has data, sync it
+                if (cloudTemplates.length > 0 && (localTmpls.length === 0 || JSON.stringify(cloudTemplates) !== JSON.stringify(localTmpls))) {
+                    console.log('☁️ Templates sync started...');
+                    this.syncTemplatesLocally(cloudTemplates);
+                } else if (cloudTemplates.length === 0 && localTmpls.length > 0) {
+                    // Upload local if cloud is empty
+                    localTmpls.forEach(t => CloudDB.saveContractTemplate(t));
                 }
             });
 
             sessionStorage.setItem('initialSyncDone', 'true');
-
         }
+    }
+
+    async syncTemplatesLocally(cloudTemplates) {
+        const updated = [];
+        for (const t of cloudTemplates) {
+            // Re-process to extract heavy PDF data to IndexedDB
+            if (t.pdfData && t.pdfData.length > 50000 && typeof contractMgr !== 'undefined') {
+                await contractMgr.savePdfToDB(t.id, t.pdfData);
+                const lw = { ...t };
+                delete lw.pdfData;
+                lw.hasLargePdf = true;
+                updated.push(lw);
+            } else {
+                updated.push(t);
+            }
+        }
+        localStorage.setItem('contractTemplates', JSON.stringify(updated));
+        if (typeof contractMgr !== 'undefined') contractMgr.init();
+        if (typeof UI !== 'undefined' && UI.refreshData) UI.refreshData();
+        if (typeof ContractUI !== 'undefined' && ContractUI.renderContracts) ContractUI.renderContracts();
     }
 
     updateCloudStatus(status) {
@@ -365,6 +346,9 @@ class DatabaseManager {
         const settings = this.getSettings();
         const gradesOrder = settings.grades || [];
 
+        const normalize = (s) => String(s || '').trim().replace(/[أإآ]/g, 'ا').toLowerCase();
+        const normalizedGrades = gradesOrder.map(normalize);
+
         let promotedCount = 0;
         let archivedCount = 0;
 
@@ -397,22 +381,25 @@ class DatabaseManager {
             }
 
             // 2. Promote Grade based on current grade list order
-            const currentGrade = student.studentGrade;
-            const currentIdx = gradesOrder.indexOf(currentGrade);
+            const currentGrade = normalize(student.studentGrade);
+            const currentIdx = normalizedGrades.indexOf(currentGrade);
 
-            if (currentIdx !== -1 && currentIdx < gradesOrder.length - 1) {
+            if (currentIdx !== -1 && currentIdx < normalizedGrades.length - 1) {
                 student.studentGrade = gradesOrder[currentIdx + 1];
                 promotedCount++;
-            } else if (currentIdx !== -1 && currentIdx === gradesOrder.length - 1) {
+            } else if (currentIdx !== -1 && currentIdx === normalizedGrades.length - 1) {
                 // Graduate / Archive the student if they reached the last grade
                 student.isArchived = true;
                 archivedCount++;
+                // Skip reset for archived students - they are done
+                return student;
             } else {
                 // FALLBACK: If current grade isn't in system list, we don't know where to promote.
-                // We keep them in same grade but mark status pending for new year below.
+                // We keep them in same grade but reset for new year below.
+                console.warn(`Could not find promotion path for grade: "${student.studentGrade}"`);
             }
 
-            // 3. Reset status for new year (CRITICAL: Clear all old contract data)
+            // 3. Reset status for new year (CRITICAL: Clear all old contract data for active students)
             student.contractStatus = 'pending';
             student.contractYear = nextYearLabel || student.contractYear;
             student.signature = null;
@@ -431,12 +418,11 @@ class DatabaseManager {
 
         this.saveStudents(updatedStudents);
 
-        // Final sync if cloud is ready - use batch update if possible
+        // Final sync if cloud is ready
         if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
-            this.showNotification('⏳ جاري تحديث السحابة... يرجى عدم إغلاق الصفحة');
+            this.showNotification('⏳ جاري تحديث السحابة...');
             CloudDB.syncLocalToCloud().then(success => {
-                if (success) this.showNotification('✅ تمت المزامنة مع السحابة بنجاح');
-                else this.showNotification('⚠️ فشل مزامنة بعض البيانات مع السحابة');
+                if (success) console.log('✅ Cloud Migration Sync Done');
             });
         }
 
@@ -925,14 +911,6 @@ const UI = {
                                 <span style="width:20px">📜</span> سجل العقود
                             </button>
                             
-                            <button class="action-dropdown-item" onclick="UI.testMigrateStudent('${student.id}')" style="color:#059669">
-                                <span style="width:20px">🧪</span> ترحيل تجريبي
-                            </button>
-
-                            <button class="action-dropdown-item" onclick="UI.archiveStudent('${student.id}')" style="color:#6366f1">
-                                <span style="width:20px">📦</span> نقل للأرشيف
-                            </button>
-
                             <div style="border-top:1px solid #f1f5f9; margin:4px 0;"></div>
                             
                             <button class="action-dropdown-item delete" onclick="UI.deleteStudent('${student.id}')">
@@ -1073,8 +1051,9 @@ const UI = {
                 signature: null,
                 signedAt: null
             };
-            if (template.type === 'pdf_template' && template.pdfData) {
-                updateData.pdfData = template.pdfData;
+            if (template.type === 'pdf_template') {
+                if (template.pdfData) updateData.pdfData = template.pdfData;
+                if (template.pdfFields) updateData.pdfFields = template.pdfFields;
             }
             // Explicitly wait for this or at least log failure
             CloudDB.updateContract(student.id, updateData).then(success => {
@@ -1533,7 +1512,7 @@ const UI = {
                             </td>
                             <td style="text-align:center; width:50%; vertical-align:bottom;">
                                 <p style="font-weight:bold; margin-bottom:10px; color:#2d3748; font-size:13px;">توقيع ولي الأمر</p>
-                                ${hasSignature ? `<img src="${student.signature}" style="max-height:80px; max-width:200px;">` : '<div style="height:80px; display:flex; align-items:center; justify-content:center; color:#cbd5e0;">................</div>'}
+                                ${hasSignature ? `<img src="${studentData.signature}" style="max-height:80px; max-width:200px;">` : '<div style="height:80px; display:flex; align-items:center; justify-content:center; color:#cbd5e0;">................</div>'}
                             </td>
                         </tr>
                     </table>
@@ -1631,10 +1610,13 @@ const UI = {
         }
     },
 
-    async downloadContractPdf(id) {
+    async downloadContractPdf(id, providedStudent = null) {
         try {
-            const students = db.getStudents();
-            const student = students.find(s => s.id === id);
+            let student = providedStudent;
+            if (!student) {
+                const students = db.getStudents();
+                student = students.find(s => s.id === id);
+            }
             if (!student) throw new Error("الطالب غير موجود");
 
             if (typeof UI.showNotification === 'function') UI.showNotification('جاري تحميل العقد...');
@@ -3219,13 +3201,42 @@ ${link}
             }
         } else {
             // Text-based contract
-            const oldStudent = window.currentStudent;
-            window.currentStudent = tempStudent;
-            try {
-                this.downloadContractPdf(studentId);
-            } finally {
-                window.currentStudent = oldStudent;
+            this.downloadContractPdf(studentId, tempStudent);
+        }
+    },
+    async wipeAllData() {
+        if (!confirm('⛔ تحذير أمني هام ⛔\n\nأنت على وشك حذف جميع البيانات (الطلاب، العقود، والإعدادات) من المتصفح ومن الخادم السحابي.\n\nهل أنت متأكد من رغبتك في تصفير النظام بالكامل؟ لا يمكن التراجع عن هذه الخطوة.')) return;
+
+        if (!confirm('تأكيد نهائي: سيتم حذف كل شيء محلياً وسحابياً. هل أنت متأكد 100%؟')) return;
+
+        console.log('🧨 Performing Factory Reset...');
+        this.showNotification('⏳ جاري تصفير النظام...');
+
+        try {
+            // 1. Clear Cloud if possible
+            if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+                await CloudDB.terminateAndClearData();
+                console.log('✅ Cloud data wiped.');
             }
+
+            // 2. Clear Local Storage & Session Storage
+            localStorage.clear();
+            sessionStorage.clear();
+
+            // 3. Clear IndexedDB (Large PDFs)
+            if (typeof indexedDB !== 'undefined' && indexedDB.deleteDatabase) {
+                indexedDB.deleteDatabase('DanatContractsDB');
+                indexedDB.deleteDatabase('DanaSchoolsDB'); // Older name just in case
+            }
+
+            // 4. Force Reload
+            alert('✅ تم تصفير النظام بالكامل (محلي وسحابي). سيتم توفير الصفحة الآن للبدء من جديد.');
+            window.location.reload();
+        } catch (err) {
+            console.error('Wipe error:', err);
+            alert('حدث خطأ أثناء مسح البيانات: ' + err.message + '\nسيتم محاولة تصفير البيانات المحلية على الأقل.');
+            localStorage.clear();
+            window.location.reload();
         }
     }
 };

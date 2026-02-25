@@ -1440,11 +1440,15 @@
                         <div class="card-body"
                             style="padding: 2rem; display: flex; justify-content: space-between; align-items: center;">
                             <div>
-                                <p style="font-weight: 700;">حذف جميع البيانات المحلية</p>
-                                <p style="font-size: 0.9rem; color: var(--text-muted);">سيتم مسح كافة البيانات من
-                                    هذا
-                                    <button class="btn btn-danger" onclick="UI.wipeAllData()">مسح كافة البيانات (محلي +
-                                        سحابي)</button>
+                                <p style="font-weight: 700; color: var(--danger-main);">حذف جميع البيانات (محلي + سحابي)
+                                </p>
+                                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
+                                    سيتم مسح كافة البيانات (الطلاب، العقود، والإعدادات) من المتصفح ومن الخادم السحابي.
+                                    لا يمكن التراجع عن هذا الإجراء!
+                                </p>
+                                <button class="btn btn-danger" onclick="UI.wipeAllData()">
+                                    🧨 مسح كافة البيانات نهائياً
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -1927,8 +1931,8 @@
     <script>
         // Force cache invalidation for main scripts
         const timestamp = Date.now();
-        document.write('<script src="script.js?t=' + timestamp + '"><\/script>');
         document.write('<script src="contracts.js?t=' + timestamp + '"><\/script>');
+        document.write('<script src="script.js?t=' + timestamp + '"><\/script>');
     </script>
     <!-- Preview Modal -->
     <div id="contractPreviewModal" class="modal">

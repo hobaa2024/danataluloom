@@ -194,14 +194,16 @@ const CloudDB = {
 
     // --- CONTRACT TEMPLATES CLOUD SYNC ---
 
-    getSettings() {
-        if (!firebaseDb) return Promise.resolve(null);
-        return firebaseDb.ref('settings/appSettings').once('value')
-            .then(snapshot => snapshot.val())
-            .catch(err => {
-                console.error('Cloud fetch settings error:', err);
-                return null;
-            });
+    // Listen for settings real-time update
+    listenForSettings(callback) {
+        if (!firebaseDb) return;
+        firebaseDb.ref('settings/appSettings').on('value', snapshot => {
+            const data = snapshot.val();
+            if (data) {
+                console.log('☁️ Settings real-time update received');
+                callback(data);
+            }
+        });
     },
 
     saveSettings(settings) {
@@ -242,6 +244,17 @@ const CloudDB = {
                 console.error('Cloud fetch template error:', err);
                 return null;
             });
+    },
+
+    // Listen for templates real-time update
+    listenForTemplates(callback) {
+        if (!firebaseDb) return;
+        firebaseDb.ref('templates').on('value', snapshot => {
+            const data = snapshot.val();
+            const templates = data ? Object.values(data) : [];
+            console.log('☁️ Templates real-time update received:', templates.length);
+            callback(templates);
+        });
     },
 
     getContractTemplates() {
@@ -287,13 +300,13 @@ const CloudDB = {
 
         console.warn('⚠️ WARNING: Wiping ALL data from cloud...');
 
-        // Remove students, templates, and settings
+        // Remove everything except fonts (they are heavy and usually safe to keep)
         const updates = {};
         updates['students'] = null;
         updates['templates'] = null;
         updates['settings'] = null;
-        // Optionally keep fonts or remove them too
-        // updates['fonts'] = null; 
+        updates['signatures'] = null; // Just in case they are stored here
+        updates['backups'] = null;    // If any backups were saved to cloud
 
         return firebaseDb.ref().update(updates)
             .then(() => {
@@ -302,7 +315,11 @@ const CloudDB = {
             })
             .catch(err => {
                 console.error('Cloud wipe error:', err);
-                return false;
+                // Last resort: try individual removes
+                return firebaseDb.ref('students').remove()
+                    .then(() => firebaseDb.ref('templates').remove())
+                    .then(() => firebaseDb.ref('settings').remove())
+                    .then(() => true);
             });
     }
 };
