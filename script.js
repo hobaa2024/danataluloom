@@ -202,41 +202,51 @@ class DatabaseManager {
     mergeRemoteData(remoteStudents) {
         if (!remoteStudents || !Array.isArray(remoteStudents)) return;
 
-        // Use full list (including archived) for merging to maintain consistency
         const localStudents = this.getStudents(true);
         let hasChanges = false;
 
-        // 1. Handle Deletions: If a local student is missing from remote, remove them
-        const remoteIds = new Set(remoteStudents.filter(s => s && s.id).map(s => String(s.id)));
-        let updatedLocal = localStudents.filter(local => {
-            if (!local || !local.id) return false;
-            // If the student is present locally but not in the cloud list, they were deleted
-            if (!remoteIds.has(String(local.id))) {
-                console.log('🗑️ Synchronized deletion for:', local.studentName);
-                hasChanges = true;
-                return false;
-            }
-            return true;
+        // Create a lookup for remote students
+        const remoteLookup = new Map();
+        remoteStudents.forEach(s => {
+            if (s && s.id) remoteLookup.set(String(s.id), s);
         });
 
-        // 2. Handle Adds/Updates
-        remoteStudents.forEach(remote => {
-            if (!remote || !remote.id) return;
-            const localIdx = updatedLocal.findIndex(l => l && String(l.id) === String(remote.id));
-            if (localIdx === -1) {
-                updatedLocal.push(remote);
-                hasChanges = true;
-            } else {
-                const local = updatedLocal[localIdx];
+        // 1. Process Local Students (Sync Updates, Handle Deletions carefully)
+        let updatedLocal = localStudents.map(local => {
+            if (!local || !local.id) return null;
+            const remote = remoteLookup.get(String(local.id));
+
+            if (remote) {
+                // Student exists in both: Update local if remote is different
                 if (JSON.stringify(local) !== JSON.stringify(remote)) {
+                    hasChanges = true;
+                    // Provide notification if status changed to signed
                     if (local.contractStatus !== 'signed' && remote.contractStatus === 'signed') {
                         if (typeof UI !== 'undefined' && UI.showNotification) {
                             UI.showNotification(`🔔 تم توقيع عقد جديد: ${remote.studentName}`);
                         }
                     }
-                    updatedLocal[localIdx] = remote;
-                    hasChanges = true;
+                    return remote;
                 }
+                return local;
+            } else {
+                // Student exists LOCALLY but NOT in remote.
+                // SAFETY: To prevent data loss (like the user reported), we only delete local students
+                // that were DEFINITELY synced to the cloud before (e.g., have a signature or were old).
+                // For now, let's keep all local-only students to avoid accidental wipes.
+                console.log('ℹ️ Student remains local-only (not in cloud):', local.studentName);
+                return local;
+            }
+        }).filter(s => s !== null);
+
+        // 2. Add New Students from Cloud
+        remoteStudents.forEach(remote => {
+            if (!remote || !remote.id) return;
+            const existsLocally = localStudents.some(l => l && String(l.id) === String(remote.id));
+            if (!existsLocally) {
+                updatedLocal.push(remote);
+                hasChanges = true;
+                console.log('✨ New student received from cloud:', remote.studentName);
             }
         });
 
@@ -494,31 +504,51 @@ class DatabaseManager {
     }
 
     syncNow() {
-        if (typeof CloudDB === 'undefined' || !CloudDB.isReady()) {
-            if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('⚠️ السحابة غير متصلة حالياً');
+        console.log('🔄 Manual Sync Starting...');
+        if (typeof CloudDB === 'undefined') {
+            if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('❌ فشل: لم يتم تحميل ملف الإعدادات السحابية');
             return;
         }
 
-        if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('⏳ جاري جلب البيانات من السحابة...');
+        if (!CloudDB.isReady()) {
+            if (typeof UI !== 'undefined' && UI.showNotification)
+                UI.showNotification('⚠️ السحابة في حالة انتظار (جاري الاتصال)... تأكد من الإنترنت');
+            return;
+        }
+
+        if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('⏳ جاري جلب البيانات من السحابة... يرجى الانتظار');
 
         CloudDB.getStudents().then(remoteStudents => {
-            if (remoteStudents && Array.isArray(remoteStudents) && remoteStudents.length > 0) {
+            console.log('☁️ Sync result:', remoteStudents ? remoteStudents.length : 0, 'students');
+
+            if (remoteStudents && Array.isArray(remoteStudents)) {
                 this.mergeRemoteData(remoteStudents);
                 if (typeof UI !== 'undefined' && UI.showNotification)
                     UI.showNotification(`✅ تمت المزامنة بنجاح: تم جلب ${remoteStudents.length} طالباً`);
                 if (typeof UI !== 'undefined') {
                     if (UI.refreshData) UI.refreshData();
-                    if (UI.renderStudents) UI.renderStudents();
                     if (UI.updateStats) UI.updateStats();
                 }
             } else {
                 if (typeof UI !== 'undefined' && UI.showNotification)
-                    UI.showNotification('ℹ️ لا توجد بيانات جديدة في السحابة');
+                    UI.showNotification('ℹ️ السحابة فارغة حالياً (لا توجد بيانات طلاب)');
             }
         }).catch(err => {
-            console.error('Manual sync error:', err);
+            console.error('Detailed Manual sync error:', err);
+            let technicalDetail = err.message || (typeof err === 'string' ? err : 'خطأ غير معروف');
+
+            // Helpful translation for common errors
+            let friendlyError = technicalDetail;
+            if (technicalDetail.includes('permission_denied')) friendlyError = 'تم رفض الوصول (Permissions Denied). تحقق من إعدادات الخادم.';
+            if (technicalDetail.includes('network')) friendlyError = 'مشكلة في الشبكة. قد يكون السبب عدم ضبط وقت الجهاز بشكل صحيح.';
+
             if (typeof UI !== 'undefined' && UI.showNotification)
-                UI.showNotification(`❌ فشل المزامنة اليدوية: ${err.message || ''}`);
+                UI.showNotification(`❌ فشل المزامنة: ${friendlyError}`);
+
+            // Direct alert for critical visibility
+            if (friendlyError.includes('Access Denied') || friendlyError.includes('permission')) {
+                alert('⚠️ تنبيه أمني: الخادم السحابي يرفض الوصول لهذه البيانات. قد تحتاج لمراجعة قواعد الحماية (Rules) في Firebase.');
+            }
         });
     }
 }
