@@ -365,6 +365,16 @@
                         <span id="cloudStatusDot"
                             style="width: 8px; height: 8px; background: #cbd5e0; border-radius: 50%;"></span>
                         <span id="cloudStatusText">جاري الاتصال...</span>
+                        <button onclick="if(typeof db !== 'undefined' && db.syncNow) db.syncNow()" title="تحديث يدوي"
+                            style="background: none; border: none; padding: 2px; cursor: pointer; color: #718096; display: flex; align-items: center; justify-content: center; transition: transform 0.3s ease;"
+                            onmouseover="this.style.color='var(--primary)'" onmouseout="this.style.color='#718096'">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M23 4v6h-6"></path>
+                                <path d="M1 20v-6h6"></path>
+                                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                            </svg>
+                        </button>
                     </div>
                     <a href="#" class="nav-link" onclick="UI.handleLogout()" style="color: #ef4444;">خروج</a>
                 </div>

@@ -31,7 +31,7 @@ class DatabaseManager {
             localStorage.setItem('appSettings', JSON.stringify({
                 schoolStampText: 'مدارس دانة العلوم - الإدارة',
                 levels: ['الطفولة المبكرة', 'رياض أطفال', 'الابتدائية', 'المتوسطة', 'الثانوية'],
-                grades: ['مستوى أول', 'مستوى ثاني', 'مستوى ثالث', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
+                grades: ['مستوى أول', 'مستوى ثاني', 'مستوى ثالث', 'الصف الأول', 'الصف الثاني', 'الصف الثالث', 'الصف الرابع', 'الصف الخامس', 'الصف السادس', 'الأول متوسط', 'الثاني متوسط', 'الثالث متوسط', 'الأول ثانوي', 'الثاني ثانوي', 'الثالث ثانوي'],
                 adminUsername: 'admin',
                 adminPassword: 'admin',
                 schoolLogo: '', // Base64 string
@@ -62,9 +62,12 @@ class DatabaseManager {
                     // Only auto-sync local to cloud if this is the first load and cloud is empty
                     console.log('☁️ Cloud empty on first load. Initializing cloud from local data...');
                     CloudDB.syncLocalToCloud();
-                } else if (remoteStudents.length > 0) {
-                    // Pull from cloud
-                    this.mergeRemoteData(remoteStudents);
+                } else {
+                    // Pull from cloud (even if empty, to allow sync of deletions)
+                    // But skip if it's the very first load and remote is empty while local has data
+                    if (!(isInitial && remoteStudents.length === 0 && this.getStudents(true).length > 0)) {
+                        this.mergeRemoteData(remoteStudents);
+                    }
                 }
 
                 // Set flag ONLY after the first real callback
@@ -236,7 +239,7 @@ class DatabaseManager {
         const defaults = {
             schoolStampText: 'مدارس دانة العلوم - الإدارة',
             levels: ['الطفولة المبكرة', 'رياض أطفال', 'الابتدائية', 'المتوسطة', 'الثانوية'],
-            grades: ['مستوى أول', 'مستوى ثاني', 'مستوى ثالث', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
+            grades: ['مستوى أول', 'مستوى ثاني', 'مستوى ثالث', 'الصف الأول', 'الصف الثاني', 'الصف الثالث', 'الصف الرابع', 'الصف الخامس', 'الصف السادس', 'الأول متوسط', 'الثاني متوسط', 'الثالث متوسط', 'الأول ثانوي', 'الثاني ثانوي', 'الثالث ثانوي'],
             adminUsername: 'admin',
             adminPassword: 'admin',
             schoolLogo: '',
@@ -467,6 +470,27 @@ class DatabaseManager {
         }
 
         return { promotedCount, archivedCount };
+    }
+
+    syncNow() {
+        if (typeof CloudDB === 'undefined' || !CloudDB.isReady()) {
+            if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('⚠️ السحابة غير متصلة حالياً');
+            return;
+        }
+
+        if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('⏳ جاري جلب البيانات من السحابة...');
+
+        CloudDB.getStudents().then(remoteStudents => {
+            if (remoteStudents && remoteStudents.length > 0) {
+                this.mergeRemoteData(remoteStudents);
+                if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification(`✅ تمت المزامنة بنجاح (${remoteStudents.length} طالب)`);
+            } else {
+                if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('ℹ️ لا توجد بيانات جديدة في السحابة');
+            }
+        }).catch(err => {
+            console.error('Manual sync error:', err);
+            if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('❌ فشل المزامنة اليدوية');
+        });
     }
 }
 
