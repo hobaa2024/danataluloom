@@ -56,25 +56,34 @@ class DatabaseManager {
 
             CloudDB.listenForUpdates(remoteStudents => {
                 this.updateCloudStatus('online');
-                const isInitial = !localStorage.getItem('cloudSyncInitialized');
+                const isSyncInitialized = localStorage.getItem('cloudSyncInitialized');
+                const localStudents = this.getStudents(true);
 
-                if (isInitial && remoteStudents.length === 0 && this.getStudents(true).length > 0) {
-                    // Only auto-sync local to cloud if this is the first load and cloud is empty
-                    console.log('☁️ Cloud empty on first load. Initializing cloud from local data...');
-                    CloudDB.syncLocalToCloud();
-                } else {
-                    // Pull from cloud (even if empty, to allow sync of deletions)
-                    // But skip if it's the very first load and remote is empty while local has data
-                    if (!(isInitial && remoteStudents.length === 0 && this.getStudents(true).length > 0)) {
-                        this.mergeRemoteData(remoteStudents);
+                if (remoteStudents.length === 0 && localStudents.length > 0) {
+                    if (!isSyncInitialized) {
+                        // First time connecting and cloud is empty: Push local to cloud
+                        console.log('☁️ Cloud empty, initializing with local data...');
+                        CloudDB.syncLocalToCloud().catch(err => console.error('Initial sync failed:', err));
+                    } else {
+                        // Cloud became empty after initialization? This is suspicious.
+                        // Don't wipe local data automatically. Allow manual sync to decide.
+                        console.warn('⚠️ Cloud is empty but local storage has data. Skipping automatic wipe for safety.');
+                        if (typeof UI !== 'undefined' && UI.showNotification)
+                            UI.showNotification('⚠️ تنبيه: السحابة فارغة ولكن يوجد بيانات محلياً. لم يتم المسح لضمان السلامة.');
                     }
+                } else if (remoteStudents.length > 0) {
+                    // Pull and merge from cloud
+                    this.mergeRemoteData(remoteStudents);
+                } else if (remoteStudents.length === 0 && localStudents.length === 0) {
+                    // Both empty, nothing to do
                 }
 
-                // Set flag ONLY after the first real callback
                 localStorage.setItem('cloudSyncInitialized', 'true');
             }, (error) => {
                 console.error("Sync Error:", error);
                 this.updateCloudStatus('offline');
+                if (typeof UI !== 'undefined' && UI.showNotification)
+                    UI.showNotification('❌ فشل الاتصال بالسحابة: تأكد من إعدادات الإنترنت');
             });
 
             // 3. Real-time Settings Listener
@@ -198,8 +207,9 @@ class DatabaseManager {
         let hasChanges = false;
 
         // 1. Handle Deletions: If a local student is missing from remote, remove them
-        const remoteIds = new Set(remoteStudents.map(s => String(s.id)));
+        const remoteIds = new Set(remoteStudents.filter(s => s && s.id).map(s => String(s.id)));
         let updatedLocal = localStudents.filter(local => {
+            if (!local || !local.id) return false;
             // If the student is present locally but not in the cloud list, they were deleted
             if (!remoteIds.has(String(local.id))) {
                 console.log('🗑️ Synchronized deletion for:', local.studentName);
@@ -211,7 +221,8 @@ class DatabaseManager {
 
         // 2. Handle Adds/Updates
         remoteStudents.forEach(remote => {
-            const localIdx = updatedLocal.findIndex(l => String(l.id) === String(remote.id));
+            if (!remote || !remote.id) return;
+            const localIdx = updatedLocal.findIndex(l => l && String(l.id) === String(remote.id));
             if (localIdx === -1) {
                 updatedLocal.push(remote);
                 hasChanges = true;
@@ -273,7 +284,17 @@ class DatabaseManager {
                 }
             }
 
-            return { ...defaults, ...saved };
+            const settings = { ...defaults, ...saved };
+
+            // --- Migration/Fix for numerical grades ---
+            // If grades are numbers, replace them with Arabic descriptive names
+            if (settings.grades && settings.grades.some(g => !isNaN(g) && g.length <= 2)) {
+                console.log('🔄 Migrating numerical grades to descriptive names...');
+                settings.grades = defaults.grades;
+                // Only save if it's the first connection or user settings changed
+                localStorage.setItem('appSettings', JSON.stringify(settings));
+            }
+            return settings;
         } catch (e) {
             return defaults;
         }
@@ -481,15 +502,23 @@ class DatabaseManager {
         if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('⏳ جاري جلب البيانات من السحابة...');
 
         CloudDB.getStudents().then(remoteStudents => {
-            if (remoteStudents && remoteStudents.length > 0) {
+            if (remoteStudents && Array.isArray(remoteStudents) && remoteStudents.length > 0) {
                 this.mergeRemoteData(remoteStudents);
-                if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification(`✅ تمت المزامنة بنجاح (${remoteStudents.length} طالب)`);
+                if (typeof UI !== 'undefined' && UI.showNotification)
+                    UI.showNotification(`✅ تمت المزامنة بنجاح: تم جلب ${remoteStudents.length} طالباً`);
+                if (typeof UI !== 'undefined') {
+                    if (UI.refreshData) UI.refreshData();
+                    if (UI.renderStudents) UI.renderStudents();
+                    if (UI.updateStats) UI.updateStats();
+                }
             } else {
-                if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('ℹ️ لا توجد بيانات جديدة في السحابة');
+                if (typeof UI !== 'undefined' && UI.showNotification)
+                    UI.showNotification('ℹ️ لا توجد بيانات جديدة في السحابة');
             }
         }).catch(err => {
             console.error('Manual sync error:', err);
-            if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('❌ فشل المزامنة اليدوية');
+            if (typeof UI !== 'undefined' && UI.showNotification)
+                UI.showNotification(`❌ فشل المزامنة اليدوية: ${err.message || ''}`);
         });
     }
 }

@@ -655,13 +655,18 @@ body {
     top: 100px;
     left: 50%;
     transform: translateX(-50%) translateY(-100px);
-    background: var(--white);
-    padding: 1rem 1.5rem;
+    background: var(--primary-gradient, #6366f1);
+    color: white;
+    padding: 1rem 2rem;
     border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-xl);
-    z-index: 3000;
+    box-shadow: var(--shadow-premium);
+    z-index: 10000;
     opacity: 0;
-    transition: var(--transition);
+    transition: var(--transition-base);
+    font-weight: 600;
+    pointer-events: none;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .notification.show {

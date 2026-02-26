@@ -90,7 +90,7 @@ const CloudDB = {
             })
             .catch(err => {
                 console.error('Cloud fetch error:', err);
-                return [];
+                throw err;
             });
     },
 
@@ -157,7 +157,7 @@ const CloudDB = {
             })
             .catch(err => {
                 console.error('Sync error:', err);
-                return false;
+                throw err;
             });
     },
 
