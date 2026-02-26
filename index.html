@@ -109,12 +109,17 @@
             padding: 4px;
             text-align: right;
             direction: rtl;
-            transform: none !important;
-            transition: none !important;
+            opacity: 0;
+            transform: translateY(5px);
+            transition: opacity 0.15s ease, transform 0.15s ease;
+            pointer-events: none;
         }
 
         .action-dropdown-menu.active {
             display: flex;
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
         }
 
         .action-dropdown-item {

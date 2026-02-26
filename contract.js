@@ -514,7 +514,7 @@ function renderContractText(contract, student) {
             'السنةالدراسية': student.contractYear || '',
             'هويةالطالب': student.nationalId || '',
             'هويةوليالامر': student.parentNationalId || '',
-            'التاريخ': new Date().toLocaleDateString('ar-SA')
+            'التاريخ': new Date().toLocaleDateString('en-GB').split('/').join(' / ')
         };
 
         const foundVars = content.match(/{[^}]+}/g) || [];
@@ -1428,7 +1428,10 @@ async function generatePdfFromTemplate(template, studentData) {
             text = studentData.parentWhatsapp || '';
         else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
         else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
-        else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-EG'); // Specific Arabic Format
+        else if (target === 'التاريخ') {
+            const d = new Date();
+            text = `${d.getDate()} / ${d.getMonth() + 1} / ${d.getFullYear()}`;
+        }
         else if (target === 'اليوم') {
             const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
             text = days[new Date().getDay()];

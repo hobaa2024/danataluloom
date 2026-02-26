@@ -1646,7 +1646,7 @@ const ContractUI = {
                     <p>${contract.content.substring(0, 150)}...</p>
                 </div>
                 <div class="contract-card-footer">
-                    <small>تم الإنشاء: ${new Date(contract.createdAt).toLocaleDateString('ar-SA')}</small>
+                    <small>تم الإنشاء: ${new Date(contract.createdAt).toLocaleDateString('en-GB').split('/').join(' / ')}</small>
                     <div class="contract-actions">
                         <button class="btn-icon" onclick="ContractUI.viewContractTemplate('${contract.id}')" title="عرض">
                             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">

@@ -461,7 +461,7 @@ class DatabaseManager {
 
         // Final sync if cloud is ready
         if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
-            this.showNotification('⏳ جاري تحديث السحابة...');
+            UI.showNotification('⏳ جاري تحديث السحابة...');
             CloudDB.syncLocalToCloud().then(success => {
                 if (success) console.log('✅ Cloud Migration Sync Done');
             });
@@ -984,6 +984,7 @@ const UI = {
             const viewportWidth = document.documentElement.clientWidth;
 
             // 1. Show momentarily to calculate dimensions
+            menu.classList.add('active'); // Use class first
             menu.style.display = 'flex';
             menu.style.visibility = 'hidden';
             menu.style.position = 'fixed';
@@ -1017,7 +1018,7 @@ const UI = {
             // 4. Finalize display
             menu.style.zIndex = '99999999';
             menu.style.visibility = 'visible';
-            menu.classList.add('active');
+            // Line 1020: menu.classList.add('active'); // Already added above
         }
     },
 
@@ -3468,10 +3469,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Close dropdowns when clicking outside
+    // Close dropdowns when clicking outside or after selecting an item
     document.addEventListener('click', (e) => {
+        // Close if click is outside action-group
         if (!e.target.closest('.action-group')) {
-            document.querySelectorAll('.action-dropdown-menu').forEach(m => m.classList.remove('active'));
+            document.querySelectorAll('.action-dropdown-menu').forEach(m => {
+                m.classList.remove('active');
+                m.style.display = 'none';
+            });
+        }
+
+        // Close if click is ON an item inside the menu
+        if (e.target.closest('.action-dropdown-item')) {
+            const menu = e.target.closest('.action-dropdown-menu');
+            if (menu) {
+                menu.classList.remove('active');
+                menu.style.display = 'none';
+            }
         }
     });
 
