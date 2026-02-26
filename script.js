@@ -3075,7 +3075,7 @@ ${link}
                         <span style="font-weight:800; font-size: 1.1rem; color:var(--text-primary);">السنة الدراسية: ${h.contractYear}</span>
                         <div style="display:flex; gap:10px; align-items:center;">
                             <button class="btn btn-secondary btn-sm" onclick="UI.downloadPastContract('${student.id}', ${idx})" style="background:#4f46e5; color:white; border:none;">📥 تحميل PDF</button>
-                            <span style="background: var(--primary-light); color: var(--primary-main); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700;">موثق في: ${new Date(h.signedAt).toLocaleDateString('ar-SA')}</span>
+                            <span style="background: var(--primary-light); color: var(--primary-main); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700;">موثق في: ${h.signedAt && !isNaN(new Date(h.signedAt).getTime()) ? new Date(h.signedAt).toLocaleDateString('ar-SA') : '---'}</span>
                         </div>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size:0.95rem;">

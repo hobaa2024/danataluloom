@@ -308,8 +308,10 @@ class ContractManager {
 
         localStorage.setItem('contractTemplates', JSON.stringify(filtered));
 
-        // Sync delete to Cloud?
-        // CloudDB.deleteContractTemplate(id); // Ideally
+        // Sync delete to Cloud
+        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+            CloudDB.deleteContractTemplate(id);
+        }
     }
 
     // Generate Final PDF from Template
@@ -1646,7 +1648,7 @@ const ContractUI = {
                     <p>${contract.content.substring(0, 150)}...</p>
                 </div>
                 <div class="contract-card-footer">
-                    <small>تم الإنشاء: ${new Date(contract.createdAt).toLocaleDateString('en-GB').split('/').join(' / ')}</small>
+                    <small>تم الإنشاء: ${contract.createdAt && !isNaN(new Date(contract.createdAt).getTime()) ? new Date(contract.createdAt).toLocaleDateString('en-GB').split('/').join(' / ') : '---'}</small>
                     <div class="contract-actions">
                         <button class="btn-icon" onclick="ContractUI.viewContractTemplate('${contract.id}')" title="عرض">
                             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">

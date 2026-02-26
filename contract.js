@@ -599,7 +599,7 @@ function showAlreadySignedSimplified(student, isFirstTime = false) {
                         </div>
                         <div style="display:flex; justify-content:space-between;">
                             <span style="color:#64748b; font-weight: 600;">تاريخ التوقيع:</span>
-                            <span style="font-weight:700; color: #1e293b;">${student.signedAt ? new Date(student.signedAt).toLocaleDateString('ar-SA') : '---'}</span>
+                            <span style="font-weight:700; color: #1e293b;">${student.signedAt && !isNaN(new Date(student.signedAt).getTime()) ? new Date(student.signedAt).toLocaleDateString('ar-SA') : '---'}</span>
                         </div>
                     </div>
                 </div>

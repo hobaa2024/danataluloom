@@ -235,6 +235,19 @@ const CloudDB = {
             });
     },
 
+    deleteContractTemplate(id) {
+        if (!firebaseDb) return Promise.resolve(false);
+        return firebaseDb.ref('templates/' + id).remove()
+            .then(() => {
+                console.log('☁️ Template deleted from cloud:', id);
+                return true;
+            })
+            .catch(err => {
+                console.error('Template cloud delete error:', err);
+                return false;
+            });
+    },
+
     getContractTemplate(id) {
         if (!firebaseDb) return Promise.resolve(null);
         return firebaseDb.ref('templates/' + id).once('value')
