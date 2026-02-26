@@ -22,15 +22,32 @@ const isFirebaseConfigured = firebaseConfig.apiKey && firebaseConfig.databaseURL
 let firebaseDb = null;
 
 // Initialize Firebase if configured
-if (isFirebaseConfigured && typeof firebase !== 'undefined') {
-    try {
-        firebase.initializeApp(firebaseConfig);
-        firebaseDb = firebase.database();
-        console.log('✅ Firebase initialized successfully');
-    } catch (e) {
-        console.error('Firebase initialization error:', e);
+if (isFirebaseConfigured) {
+    if (typeof firebase === 'undefined') {
+        console.error('❌ Error: Firebase scripts were NOT loaded. Check your internet or firewall.');
+        if (typeof UI !== 'undefined' && UI.showNotification) {
+            alert('⚠️ لم يتم تحميل مكتبات Firebase! يبدو أن الإنترنت ضعيف أو مغلق في مدرستك. حاول استخدام شبكة بيانات الجوال.');
+        }
+    } else {
+        try {
+            firebase.initializeApp(firebaseConfig);
+            firebaseDb = firebase.database();
+            console.log('✅ Firebase initialized successfully');
+
+            // Check for immediate connection failures
+            firebaseDb.ref(".info/connected").on("value", (snap) => {
+                if (snap.val() === true) {
+                    console.log("☁️ Real-time Connection Established");
+                } else {
+                    console.warn("☁️ Connection lost or waiting...");
+                }
+            });
+        } catch (e) {
+            console.error('Firebase initialization error:', e);
+            alert('❌ خطأ في تهيئة Firebase: ' + e.message);
+        }
     }
-} else if (!isFirebaseConfigured) {
+} else {
     console.warn('⚠️ Firebase not configured. Using localStorage only.');
 }
 

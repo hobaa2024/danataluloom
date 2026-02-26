@@ -207,10 +207,31 @@
         }
     </script>
 
-    <!-- Firebase SDK -->
+    <!-- Firebase SDK with Fallbacks -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script>
+        if (typeof firebase === 'undefined') {
+            console.warn("Firebase App failed from gstatic, trying jsdelivr...");
+            document.write('<script src="https://cdn.jsdelivr.net/npm/firebase@9.22.0/firebase-app-compat.js"><\/script>');
+        }
+    </script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-    <script src="firebase-config.js"></script>
+    <script>
+        if (typeof firebase !== 'undefined' && !firebase.database) {
+            console.warn("Firebase DB failed from gstatic, trying jsdelivr...");
+            document.write('<script src="https://cdn.jsdelivr.net/npm/firebase@9.22.0/firebase-database-compat.js"><\/script>');
+        }
+    </script>
+    <!-- Add Auth for better security & rule compliance -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script>
+        if (typeof firebase !== 'undefined' && !firebase.auth) {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/firebase@9.22.0/firebase-auth-compat.js"><\/script>');
+        }
+    </script>
+    <script>
+        document.write('<script src="firebase-config.js?t=' + Date.now() + '"><\/script>');
+    </script>
 </head>
 
 <body class="admin-body">
