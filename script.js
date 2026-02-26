@@ -54,7 +54,6 @@ class DatabaseManager {
                 }
             });
 
-            // 2. Real-time Student Listener
             CloudDB.listenForUpdates(remoteStudents => {
                 this.updateCloudStatus('online');
                 const isInitial = !localStorage.getItem('cloudSyncInitialized');
@@ -63,11 +62,13 @@ class DatabaseManager {
                     // Only auto-sync local to cloud if this is the first load and cloud is empty
                     console.log('☁️ Cloud empty on first load. Initializing cloud from local data...');
                     CloudDB.syncLocalToCloud();
-                    localStorage.setItem('cloudSyncInitialized', 'true');
-                } else {
+                } else if (remoteStudents.length > 0) {
+                    // Pull from cloud
                     this.mergeRemoteData(remoteStudents);
-                    localStorage.setItem('cloudSyncInitialized', 'true');
                 }
+
+                // Set flag ONLY after the first real callback
+                localStorage.setItem('cloudSyncInitialized', 'true');
             }, (error) => {
                 console.error("Sync Error:", error);
                 this.updateCloudStatus('offline');
@@ -80,11 +81,10 @@ class DatabaseManager {
 
                 if (cloudSettings === null) {
                     if (!isInitial) {
-                        // Only reload if we actually have local settings to wipe (prevents loop)
+                        // Safety: Don't wipe settings if they exist locally on the very first run
                         if (localStorage.getItem('appSettings')) {
-                            console.log('🗑️ Synchronized settings wipe');
-                            localStorage.removeItem('appSettings');
-                            window.location.reload();
+                            console.log('🗑️ Synchronized settings wipe blocked (safety)');
+                            // localStorage.removeItem('appSettings'); // Disabled auto-wipe for safety
                         }
                     } else if (localSettings && Object.keys(localSettings).length > 0) {
                         console.log('☁️ Cloud settings empty. Initializing cloud from local...');
@@ -118,8 +118,7 @@ class DatabaseManager {
                     if (typeof UI !== 'undefined' && UI.refreshData) UI.refreshData();
                 }
             });
-
-            localStorage.setItem('cloudSyncInitialized', 'true');
+            // Flags are handled by async listeners
         }
     }
 
