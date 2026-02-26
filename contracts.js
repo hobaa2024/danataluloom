@@ -238,10 +238,14 @@ class ContractManager {
             pdfDataToSave = contract.pdfData;
             contract.hasLargePdf = true;
             delete contract.pdfData; // Remove from lightweight storage object
+        } else if (!contract.pdfData && contract.hasLargePdf && contract.id) {
+            // REPAIR: If editing and PDF data is already in IndexedDB, fetch it for cloud sync
+            const storedData = await this.getPdfFromDB(contract.id);
+            if (storedData) pdfDataToSave = storedData;
         }
 
         // Save heavy data to IndexedDB
-        if (pdfDataToSave) {
+        if (pdfDataToSave && !contract.pdfData) {
             try {
                 await this.savePdfToDB(contract.id, pdfDataToSave);
             } catch (e) {
@@ -276,11 +280,16 @@ class ContractManager {
             if (pdfDataToSave) {
                 fullContract.pdfData = pdfDataToSave;
             }
-            // Upload to Firebase (CloudDB handles compression if needed)
-            CloudDB.saveContractTemplate(fullContract).then(() => {
-                if (typeof UI !== 'undefined' && UI.showNotification)
-                    UI.showNotification('تمت المزامنة مع السحابة بنجاح');
-            });
+            // SAFETY: Do not upload empty PDF templates
+            if (fullContract.type === 'pdf_template' && !fullContract.pdfData) {
+                console.error('❌ Blocked uploading empty PDF template');
+            } else {
+                // Upload to Firebase (CloudDB handles compression if needed)
+                CloudDB.saveContractTemplate(fullContract).then(() => {
+                    if (typeof UI !== 'undefined' && UI.showNotification)
+                        UI.showNotification('تمت المزامنة مع السحابة بنجاح');
+                });
+            }
         }
 
         return contract;

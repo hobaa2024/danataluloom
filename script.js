@@ -31,7 +31,7 @@ class DatabaseManager {
             localStorage.setItem('appSettings', JSON.stringify({
                 schoolStampText: 'مدارس دانة العلوم - الإدارة',
                 levels: ['الطفولة المبكرة', 'رياض أطفال', 'الابتدائية', 'المتوسطة', 'الثانوية'],
-                grades: ['مستوى أول', 'مستوى ثاني', 'مستوى ثالث', 'الصف الأول', 'الصف الثاني', 'الصف الثالث', 'الصف الرابع', 'الصف الخامس', 'الصف السادس', 'الأول متوسط', 'الثاني متوسط', 'الثالث متوسط', 'الأول ثانوي', 'الثاني ثانوي', 'الثالث ثانوي'],
+                grades: ['مستوى أول', 'مستوى ثاني', 'مستوى ثالث', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],
                 adminUsername: 'admin',
                 adminPassword: 'admin',
                 schoolLogo: '', // Base64 string
@@ -57,11 +57,16 @@ class DatabaseManager {
             // 2. Real-time Student Listener
             CloudDB.listenForUpdates(remoteStudents => {
                 this.updateCloudStatus('online');
-                if (remoteStudents.length === 0 && this.getStudents().length > 0) {
-                    // One-time sync: if cloud is empty but local has data
+                const isInitial = !localStorage.getItem('cloudSyncInitialized');
+
+                if (isInitial && remoteStudents.length === 0 && this.getStudents(true).length > 0) {
+                    // Only auto-sync local to cloud if this is the first load and cloud is empty
+                    console.log('☁️ Cloud empty on first load. Initializing cloud from local data...');
                     CloudDB.syncLocalToCloud();
+                    localStorage.setItem('cloudSyncInitialized', 'true');
                 } else {
                     this.mergeRemoteData(remoteStudents);
+                    localStorage.setItem('cloudSyncInitialized', 'true');
                 }
             }, (error) => {
                 console.error("Sync Error:", error);
@@ -70,8 +75,22 @@ class DatabaseManager {
 
             // 3. Real-time Settings Listener
             CloudDB.listenForSettings(cloudSettings => {
+                const isInitial = !localStorage.getItem('cloudSyncInitialized');
                 const localSettings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-                if (JSON.stringify(cloudSettings) !== JSON.stringify(localSettings)) {
+
+                if (cloudSettings === null) {
+                    if (!isInitial) {
+                        // Only reload if we actually have local settings to wipe (prevents loop)
+                        if (localStorage.getItem('appSettings')) {
+                            console.log('🗑️ Synchronized settings wipe');
+                            localStorage.removeItem('appSettings');
+                            window.location.reload();
+                        }
+                    } else if (localSettings && Object.keys(localSettings).length > 0) {
+                        console.log('☁️ Cloud settings empty. Initializing cloud from local...');
+                        CloudDB.saveSettings(localSettings);
+                    }
+                } else if (JSON.stringify(cloudSettings) !== JSON.stringify(localSettings)) {
                     console.log('☁️ Settings updated from cloud');
                     localStorage.setItem('appSettings', JSON.stringify(cloudSettings));
                     if (typeof UI !== 'undefined') {
@@ -85,17 +104,22 @@ class DatabaseManager {
             // 4. Real-time Templates Listener
             CloudDB.listenForTemplates(cloudTemplates => {
                 const localTmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+                const isInitial = !localStorage.getItem('cloudSyncInitialized');
+
                 // If local is currently empty and cloud has data, sync it
                 if (cloudTemplates.length > 0 && (localTmpls.length === 0 || JSON.stringify(cloudTemplates) !== JSON.stringify(localTmpls))) {
                     console.log('☁️ Templates sync started...');
                     this.syncTemplatesLocally(cloudTemplates);
-                } else if (cloudTemplates.length === 0 && localTmpls.length > 0) {
-                    // Upload local if cloud is empty
-                    localTmpls.forEach(t => CloudDB.saveContractTemplate(t));
+                } else if (!isInitial && cloudTemplates.length === 0 && localTmpls.length > 0) {
+                    // Synchronized deletion
+                    console.log('🗑️ Synchronized deletion for all templates');
+                    localStorage.setItem('contractTemplates', JSON.stringify([]));
+                    if (typeof contractMgr !== 'undefined') contractMgr.init();
+                    if (typeof UI !== 'undefined' && UI.refreshData) UI.refreshData();
                 }
             });
 
-            sessionStorage.setItem('initialSyncDone', 'true');
+            localStorage.setItem('cloudSyncInitialized', 'true');
         }
     }
 
@@ -166,29 +190,45 @@ class DatabaseManager {
 
     mergeRemoteData(remoteStudents) {
         if (!remoteStudents || !Array.isArray(remoteStudents)) return;
-        const localStudents = this.getStudents();
+
+        // Use full list (including archived) for merging to maintain consistency
+        const localStudents = this.getStudents(true);
         let hasChanges = false;
+
+        // 1. Handle Deletions: If a local student is missing from remote, remove them
+        const remoteIds = new Set(remoteStudents.map(s => String(s.id)));
+        let updatedLocal = localStudents.filter(local => {
+            // If the student is present locally but not in the cloud list, they were deleted
+            if (!remoteIds.has(String(local.id))) {
+                console.log('🗑️ Synchronized deletion for:', local.studentName);
+                hasChanges = true;
+                return false;
+            }
+            return true;
+        });
+
+        // 2. Handle Adds/Updates
         remoteStudents.forEach(remote => {
-            const localIdx = localStudents.findIndex(l => String(l.id) === String(remote.id));
+            const localIdx = updatedLocal.findIndex(l => String(l.id) === String(remote.id));
             if (localIdx === -1) {
-                localStudents.push(remote);
+                updatedLocal.push(remote);
                 hasChanges = true;
             } else {
-                const local = localStudents[localIdx];
+                const local = updatedLocal[localIdx];
                 if (JSON.stringify(local) !== JSON.stringify(remote)) {
-                    // Check if status changed to 'signed' remotely
                     if (local.contractStatus !== 'signed' && remote.contractStatus === 'signed') {
                         if (typeof UI !== 'undefined' && UI.showNotification) {
                             UI.showNotification(`🔔 تم توقيع عقد جديد: ${remote.studentName}`);
                         }
                     }
-                    localStudents[localIdx] = remote;
+                    updatedLocal[localIdx] = remote;
                     hasChanges = true;
                 }
             }
         });
+
         if (hasChanges) {
-            localStorage.setItem('students', JSON.stringify(localStudents));
+            localStorage.setItem('students', JSON.stringify(updatedLocal));
             if (typeof UI !== 'undefined' && UI.refreshData) UI.refreshData();
         }
     }
@@ -298,16 +338,17 @@ class DatabaseManager {
     deleteStudent(id) {
         console.log('🗑️ Attempting to delete student with ID:', id);
         try {
-            const students = this.getStudents();
+            // CRITICAL: Include archived students so we don't accidentally wipe them from local storage
+            const students = this.getStudents(true);
             const initialCount = students.length;
-            // Use String() to avoid type mismatch (e.g., number vs string)
             const filtered = students.filter(s => String(s.id) !== String(id));
 
             if (filtered.length === initialCount) {
                 console.warn('⚠️ No student found with ID:', id);
+                return false;
             }
 
-            localStorage.setItem('students', JSON.stringify(filtered));
+            this.saveStudents(filtered);
             if (typeof CloudDB !== 'undefined') CloudDB.deleteStudent(id);
             return true;
         } catch (error) {
@@ -317,11 +358,11 @@ class DatabaseManager {
     }
 
     updateStudentStatus(id, status) {
-        const students = this.getStudents();
-        const idx = students.findIndex(s => s.id === id);
+        const students = this.getStudents(true); // Include archived for lookup safety
+        const idx = students.findIndex(s => String(s.id) === String(id));
         if (idx !== -1) {
             students[idx].contractStatus = status;
-            localStorage.setItem('students', JSON.stringify(students));
+            this.saveStudents(students);
             if (typeof CloudDB !== 'undefined') {
                 CloudDB.updateContract(id, { contractStatus: status });
             }
@@ -2703,53 +2744,7 @@ ${link}
     },
 
     // --- DATA WIPING (DANGER ZONE) ---
-    async wipeAllData() {
-        if (!confirm('⚠️ تحذير شديد: سيتم حذف جميع بيانات الطلاب والعقود والإعدادات نهائياً.\n\nتأكد من أخذ "لقطة كاملة للنظام" أولاً إذا كنت تريد الاحتفاظ ببياناتك للمستقبل.\n\nهل أنت متأكد تماماً؟')) return;
-
-        const password = prompt("للتأكيد، يرجى إدخال كلمة مرور المدير:");
-        const settings = db.getSettings();
-
-        // Check password (fallback to 'admin' if settings broken)
-        if (password !== (settings?.adminPassword || 'admin') && password !== 'admin') {
-            alert("كلمة المرور غير صحيحة. تم إلغاء العملية.");
-            return;
-        }
-
-        const btn = event.target;
-        const originalText = btn.textContent;
-        btn.textContent = "جاري الحذف...";
-        btn.disabled = true;
-
-        try {
-            // 1. Wipe Cloud Data
-            if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
-                await CloudDB.terminateAndClearData();
-            }
-
-            // 2. Wipe Local Data
-            localStorage.removeItem('students');
-            localStorage.removeItem('contracts');
-            localStorage.removeItem('contractTemplates');
-
-            // Allow user to start fresh
-            // Reset to empty arrays
-            localStorage.setItem('students', JSON.stringify([]));
-            localStorage.setItem('contracts', JSON.stringify([]));
-            localStorage.setItem('contractTemplates', JSON.stringify([]));
-
-            // Clear session
-            sessionStorage.clear();
-
-            alert("✅ تم تصفير النظام بنجاح.\nسيتم إعادة تحميل الصفحة الآن.");
-            window.location.reload();
-
-        } catch (error) {
-            console.error("Wipe error:", error);
-            alert("حدث خطأ: " + error.message);
-            btn.textContent = originalText;
-            btn.disabled = false;
-        }
-    },
+    // (Redundant old wipeAllData removed, using the one at the end of the UI object)
 
     exportSystemJSON() {
         console.log('💾 Starting System Snapshot...');

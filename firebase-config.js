@@ -199,10 +199,9 @@ const CloudDB = {
         if (!firebaseDb) return;
         firebaseDb.ref('settings/appSettings').on('value', snapshot => {
             const data = snapshot.val();
-            if (data) {
-                console.log('☁️ Settings real-time update received');
-                callback(data);
-            }
+            // Always callback even if null (to allow sync of resets)
+            console.log('☁️ Settings real-time update received');
+            callback(data);
         });
     },
 
@@ -319,6 +318,8 @@ const CloudDB = {
                 return firebaseDb.ref('students').remove()
                     .then(() => firebaseDb.ref('templates').remove())
                     .then(() => firebaseDb.ref('settings').remove())
+                    .then(() => firebaseDb.ref('signatures').remove())
+                    .then(() => firebaseDb.ref('backups').remove())
                     .then(() => true);
             });
     }

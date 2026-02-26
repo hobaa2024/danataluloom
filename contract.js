@@ -421,25 +421,46 @@ function renderContractText(contract, student) {
     // FALLBACK: If it's a PDF but data or fields are missing, try fetching it from CloudDB
     if (isPdf && (!contract.pdfData || !contract.pdfFields) && student.contractTemplateId) {
         console.log('🔄 PDF data or fields missing, attempting last-resort fetch from cloud...');
-        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
-            // Use getContractTemplates and find the one we need since getContractTemplate might not exist
-            CloudDB.getContractTemplates().then(templates => {
-                const remote = templates.find(t => t.id === student.contractTemplateId);
-                if (remote && remote.pdfData) {
-                    console.log('✅ PDF data and fields fetched successfully from cloud list');
-                    contract.pdfData = remote.pdfData;
-                    contract.pdfFields = remote.pdfFields;
-                    renderContractText(contract, student);
-                } else {
+
+        // Show loading state while waiting for CloudDB
+        contractTextDiv.innerHTML = `<div style="padding:40px; text-align:center;">
+            <div class="loading"></div>
+            <p style="margin-top:15px; color:#4a5568;">جاري تحميل محتوى العقد من السحابة... يرجى الانتظار</p>
+        </div>`;
+
+        const attemptFetch = () => {
+            if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+                CloudDB.getContractTemplates().then(templates => {
+                    const remote = Array.isArray(templates) ? templates.find(t => t.id === student.contractTemplateId) : null;
+                    if (remote && remote.pdfData) {
+                        console.log('✅ PDF data and fields fetched successfully from cloud list');
+                        contract.pdfData = remote.pdfData;
+                        contract.pdfFields = remote.pdfFields;
+                        renderContractText(contract, student);
+                    } else {
+                        contractTextDiv.innerHTML = `<div style="padding:40px; text-align:center; color:#e11d48;">
+                            <h3>⚠️ تعذر تحميل ملف العقد</h3>
+                            <p>يبدو أن ملف العقد غير متوفر على السحابة أو تم حذفه.</p>
+                            <p>يرجى التواصل مع إدارة المدرسة.</p>
+                            <p style="font-size:11px; color:#94a3b8; margin-top:10px;">ID: ${student.contractTemplateId || 'none'}</p>
+                        </div>`;
+                    }
+                }).catch(err => {
+                    console.error("Cloud fetch failed:", err);
                     contractTextDiv.innerHTML = `<div style="padding:40px; text-align:center; color:#e11d48;">
-                        <h3>⚠️ تعذر تحميل ملف العقد</h3>
-                        <p>يرجى التأكد من اتصال الإنترنت أو محاولة تحديث الصفحة.</p>
+                        <h3>❌ خطأ في الاتصال</h3>
+                        <p>فشل جلب البيانات من السحابة. يرجى التحقق من اتصال الإنترنت.</p>
                     </div>`;
-                }
-            }).catch(err => {
-                console.error("Cloud fetch failed:", err);
-            });
-        }
+                });
+            } else {
+                // Retry in 500ms if Firebase not ready yet
+                console.log('⏳ Waiting for CloudDB to be ready...');
+                setTimeout(attemptFetch, 500);
+            }
+        };
+
+        attemptFetch();
+        return; // EXIT: Wait for the async process
     }
 
     if (isPdf && contract.pdfData) {
