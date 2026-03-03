@@ -27,16 +27,20 @@ class ContractManager {
 
     // --- IndexedDB for Large Files ---
     initDB() {
-        const request = indexedDB.open("DanatContractsDB", 1);
+        // Upgrade to version 2 to add studentMedia store
+        const request = indexedDB.open("DanatContractsDB", 2);
         request.onupgradeneeded = (e) => {
             const db = e.target.result;
             if (!db.objectStoreNames.contains("pdfTemplates")) {
                 db.createObjectStore("pdfTemplates", { keyPath: "id" });
             }
+            if (!db.objectStoreNames.contains("studentMedia")) {
+                db.createObjectStore("studentMedia", { keyPath: "id" });
+            }
         };
         request.onsuccess = (e) => {
             this.db = e.target.result;
-            console.log("✅ IndexedDB Ready for Large Contracts");
+            console.log("✅ IndexedDB Ready (v2) for Large Files");
         };
         request.onerror = (e) => console.error("DB Error:", e);
     }
@@ -67,12 +71,48 @@ class ContractManager {
         tx.objectStore("pdfTemplates").delete(id);
     }
 
+    // New methods for Student Media (signatures, images, extra large data)
+    async saveMedia(studentId, type, data) {
+        return new Promise((resolve) => {
+            if (!this.db) { resolve(false); return; }
+            const tx = this.db.transaction(["studentMedia"], "readwrite");
+            const id = `${studentId}_${type}`;
+            tx.objectStore("studentMedia").put({ id, data, studentId, type, updatedAt: Date.now() });
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => resolve(false);
+        });
+    }
+
+    async getMedia(studentId, type) {
+        return new Promise((resolve) => {
+            if (!this.db) { resolve(null); return; }
+            const tx = this.db.transaction(["studentMedia"], "readonly");
+            const id = `${studentId}_${type}`;
+            const req = tx.objectStore("studentMedia").get(id);
+            req.onsuccess = () => resolve(req.result ? req.result.data : null);
+            req.onerror = () => resolve(null);
+        });
+    }
+
+    async deleteMedia(studentId, type) {
+        if (!this.db) return;
+        const tx = this.db.transaction(["studentMedia"], "readwrite");
+        const id = `${studentId}_${type}`;
+        tx.objectStore("studentMedia").delete(id);
+    }
+
     init() {
-        if (!localStorage.getItem('contractTemplates')) {
-            const defaultContract = {
-                id: 'default-' + Date.now(),
-                title: 'عقد تسجيل الطلاب الافتراضي',
-                content: `عقد تسجيل طالب
+        const templates = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+        if (templates.length === 0) {
+            this.forceReInit();
+        }
+    }
+
+    forceReInit() {
+        const defaultContract = {
+            id: 'default-' + Date.now(),
+            title: 'عقد تسجيل الطلاب الافتراضي',
+            content: `عقد تسجيل طالب
 
 اسم الطالب: {اسم_الطالب}
 الصف الدراسي: {الصف}
@@ -99,11 +139,11 @@ class ContractManager {
 - الالتزام بلوائح وأنظمة المدرسة
 
 تم التوقيع بتاريخ: {التاريخ}`,
-                isDefault: true,
-                createdAt: new Date().toISOString()
-            };
-            localStorage.setItem('contractTemplates', JSON.stringify([defaultContract]));
-        }
+            isDefault: true,
+            createdAt: new Date().toISOString()
+        };
+        localStorage.setItem('contractTemplates', JSON.stringify([defaultContract]));
+        console.log("♻️ Contract Templates Restored (Emergency Init)");
     }
 
     replaceVariables(content, studentData) {
@@ -1542,7 +1582,7 @@ const ContractUI = {
     },
 
 
-    openModal(contractId = null) {
+    async openModal(contractId = null) {
         if (!this.modal) this.init();
 
         this.currentEditingId = contractId;
@@ -1559,10 +1599,21 @@ const ContractUI = {
                     // Important: Copy fields so we don't mutate original until save
                     this.pdfManager.addedFields = contract.pdfFields ? JSON.parse(JSON.stringify(contract.pdfFields)) : [];
 
-                    if (contract.pdfData) {
+                    // Handle PDF data retrieval (check localStorage then IndexedDB)
+                    let pdfData = contract.pdfData;
+                    if (!pdfData && contract.hasLargePdf) {
+                        if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('⏳ جاري استرجاع ملف PDF من قاعدة البيانات...');
+                        pdfData = await contractMgr.getPdfFromDB(contract.id);
+                        if (!pdfData && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
+                            const remote = await CloudDB.getContractTemplate(contract.id);
+                            if (remote && remote.pdfData) pdfData = remote.pdfData;
+                        }
+                    }
+
+                    if (pdfData) {
                         // Using timeout to ensure switchInputMethod's logic (initPdfTemplateLogic) has started
                         setTimeout(() => {
-                            this.loadPdfFile(contract.pdfData).then(() => {
+                            this.loadPdfFile(pdfData).then(() => {
                                 document.getElementById('pdfTemplateUploadArea').style.display = 'none';
                                 document.getElementById('pdfTemplateEditor').style.display = 'block';
                                 this.renderOverlays();
@@ -1572,6 +1623,10 @@ const ContractUI = {
                                 alert("عذراً، فشل تحميل معاينة القالب. جرب إعادة رفع الملف يدوياً.");
                             });
                         }, 100);
+                    } else {
+                        // Default back to upload area if data is completely missing
+                        document.getElementById('pdfTemplateUploadArea').style.display = 'block';
+                        document.getElementById('pdfTemplateEditor').style.display = 'none';
                     }
                 } else {
                     this.switchInputMethod('write');
@@ -1954,7 +2009,7 @@ function initContractEvents() {
 
     const form = document.getElementById('contractForm');
     if (form) {
-        form.addEventListener('submit', (e) => {
+        form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const titleInput = document.getElementById('contractTitle');
@@ -1970,7 +2025,7 @@ function initContractEvents() {
             if (ContractUI.currentInputMethod === 'pdf_template') {
                 const manager = ContractUI.pdfManager;
 
-                const finalSave = (pdfData) => {
+                const finalSave = async (pdfData) => {
                     contract.type = 'pdf_template';
                     contract.pdfData = pdfData;
                     contract.pdfFields = manager.addedFields;
@@ -1980,7 +2035,7 @@ function initContractEvents() {
                         contract.content = 'قالب PDF: ' + (manager.file ? manager.file.name : 'نسخة محفوظة');
                     }
 
-                    contractMgr.saveContract(contract);
+                    await contractMgr.saveContract(contract);
                     ContractUI.closeModal();
                     ContractUI.renderContracts();
                     if (typeof loadContractTemplates === 'function') loadContractTemplates();
@@ -1992,12 +2047,21 @@ function initContractEvents() {
                     reader.onload = (evt) => finalSave(evt.target.result);
                     reader.readAsDataURL(manager.file);
                 } else {
-                    // Maybe it's an edit and we already have the data
+                    // It's an edit - try to rescue existing data
+                    let existingPdfData = null;
                     const existing = contractMgr.getContract(contract.id);
-                    if (existing && existing.pdfData) {
-                        finalSave(existing.pdfData);
+                    if (existing) {
+                        if (existing.pdfData) {
+                            existingPdfData = existing.pdfData;
+                        } else if (existing.hasLargePdf) {
+                            existingPdfData = await contractMgr.getPdfFromDB(contract.id);
+                        }
+                    }
+
+                    if (existingPdfData) {
+                        await finalSave(existingPdfData);
                     } else {
-                        alert('يرجى اختيار ملف PDF أولاً');
+                        alert('يرجى اختيار ملف PDF أولاً لإنشاء القالب');
                     }
                 }
                 return;
@@ -2014,7 +2078,7 @@ function initContractEvents() {
                 contract.type = 'text';
             }
 
-            contractMgr.saveContract(contract);
+            await contractMgr.saveContract(contract);
             ContractUI.closeModal();
             ContractUI.renderContracts();
             if (typeof loadContractTemplates === 'function') loadContractTemplates();

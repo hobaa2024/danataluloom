@@ -1007,13 +1007,13 @@
             }
         }, 500);
     </script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-    <script src="firebase-config.js"></script>
     <script>
-        // Force cache invalidation - load contract.js with timestamp
+        // Force cache invalidation for all critical scripts
+        const timestamp = Date.now();
+        document.write('<script src="hostinger-config.js?v=' + timestamp + '"><\/script>');
+
         const script = document.createElement('script');
-        script.src = 'contract.js?t=' + Date.now();
+        script.src = 'contract.js?v=' + timestamp;
         document.body.appendChild(script);
     </script>
 </body>

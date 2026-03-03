@@ -608,10 +608,7 @@ function showAlreadySignedSimplified(student, isFirstTime = false) {
                     <button id="downloadPdfBtn" class="btn btn-primary btn-large" style="width:100%; height: 65px; font-size: 1.2rem; border-radius: 16px;">
                         📥 تحميل نسخة العقد (PDF)
                     </button>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                        <button class="btn btn-secondary" onclick="printContract()" style="padding: 1rem; border-radius: 12px; font-weight: 700;">
-                            🖨️ طباعة
-                        </button>
+                    <div style="display: grid; grid-template-columns: 1fr; gap: 1rem;">
                         <button class="btn btn-secondary" id="viewContractBtn" style="padding: 1rem; border-radius: 12px; font-weight: 700;">
                             👁️ معاينة العقد
                         </button>
@@ -665,6 +662,31 @@ function showAlreadySignedSimplified(student, isFirstTime = false) {
                         // Hide interactive elements (signature/uploads) to make it read-only look
                         const docsStep = document.getElementById('docsStep');
                         if (docsStep) docsStep.style.display = 'none'; // Hide upload/sign area to avoid confusion
+
+                        // RE-RENDER the contract with signature data so it appears in the preview
+                        // This is critical for PDF templates where the signature must be embedded in the PDF
+                        const isPdfContract = currentStudent && (
+                            currentStudent.contractType === 'pdf_template' ||
+                            (currentStudent.cachedContractContent && currentStudent.cachedContractContent.startsWith('قالب PDF:'))
+                        );
+
+                        if (isPdfContract && currentStudent.contract && student.signature) {
+                            // For PDF contracts: re-render the entire contract with updated student data (including signature)
+                            const updatedStudent = { ...student, signature: student.signature, idImage: student.idImage || uploadedFile };
+                            console.log('🔄 Re-rendering PDF contract with signature for preview...');
+                            renderContractText(currentStudent.contract, updatedStudent);
+                        } else if (student.signature && !document.getElementById('injected_signature')) {
+                            // For text contracts: inject the signature as HTML below the contract text
+                            const contractContainer = document.querySelector('.contract-text') || document.querySelector('.card-body');
+                            if (contractContainer) {
+                                contractContainer.innerHTML += `
+                                <div id="injected_signature" style="text-align:center; margin-top:30px; border-top:2px dashed #ccc; padding-top:20px; text-align: center;">
+                                    <h4 style="color:#4f46e5; margin-bottom:10px;">توقيع ولي الأمر المعتمد</h4>
+                                    <img src="${student.signature}" style="max-height:120px; max-width:100%; object-fit:contain; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; background: white;">
+                                    <p style="color:#64748b; font-size:0.85rem; margin-top:10px;">تم التوقيع إلكترونياً بتاريخ: ${new Date().toLocaleDateString('ar-SA')}</p>
+                                </div>`;
+                            }
+                        }
 
                         // Ensure contract text container uses full width if needed
                         const contractCard = document.querySelector('.section-card:first-child');
@@ -1093,15 +1115,21 @@ document.getElementById('submitContract')?.addEventListener('click', async () =>
         currentStudent = studentToSave;
 
         // 3. Save to Cloud (Background - don't let it block if slow)
-        if (studentIdToSave && typeof CloudDB !== 'undefined') {
-            CloudDB.updateContract(String(studentIdToSave), {
+        // Send FULL student data so if the student doesn't exist in server yet (Excel imports),
+        // a complete record is created and the "already signed" check works on revisit
+        if (studentIdToSave && typeof CloudDB !== 'undefined' && CloudDB.updateContract) {
+            const cloudData = {
+                ...currentStudent,
+                id: String(studentIdToSave),
                 contractStatus: 'signed',
                 signedAt: now.toISOString(),
                 signature: signatureData,
                 idImage: uploadedFile,
                 extraDocs: extraDocs,
                 contractNo: contractNo
-            }).catch(e => console.warn("Cloud Sync Deferred:", e));
+            };
+            CloudDB.updateContract(String(studentIdToSave), cloudData)
+                .catch(e => console.warn("Cloud Sync Deferred:", e));
         }
 
         // 4. Prepare Success Data - CACHE contract content before hiding main view
@@ -1430,7 +1458,11 @@ async function generatePdfFromTemplate(template, studentData) {
         else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
         else if (target === 'التاريخ') {
             const d = new Date();
-            text = `${d.getDate()} / ${d.getMonth() + 1} / ${d.getFullYear()}`;
+            const day = d.getDate().toString().padStart(2, '0');
+            const month = (d.getMonth() + 1).toString().padStart(2, '0');
+            const year = d.getFullYear();
+            // Hyphens and spaces are safer against automatic reversal in some PDF readers
+            text = `${day} - ${month} - ${year}`;
         }
         else if (target === 'اليوم') {
             const days = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];

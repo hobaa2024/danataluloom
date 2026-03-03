@@ -21,116 +21,98 @@ class DatabaseManager {
     }
 
     init() {
-        if (!localStorage.getItem('students')) {
-            localStorage.setItem('students', JSON.stringify([]));
-        }
-        if (!localStorage.getItem('contracts')) {
-            localStorage.setItem('contracts', JSON.stringify([]));
-        }
-        if (!localStorage.getItem('appSettings')) {
-            localStorage.setItem('appSettings', JSON.stringify({
-                schoolStampText: 'مدارس دانة العلوم - الإدارة',
-                levels: ['الطفولة المبكرة', 'رياض أطفال', 'الابتدائية', 'المتوسطة', 'الثانوية'],
-                grades: ['مستوى أول', 'مستوى ثاني', 'مستوى ثالث', 'الصف الأول', 'الصف الثاني', 'الصف الثالث', 'الصف الرابع', 'الصف الخامس', 'الصف السادس', 'الأول متوسط', 'الثاني متوسط', 'الثالث متوسط', 'الأول ثانوي', 'الثاني ثانوي', 'الثالث ثانوي'],
-                adminUsername: 'admin',
-                adminPassword: 'admin',
-                schoolLogo: '', // Base64 string
-                schoolPhone: '966590000000' // Default contact
-            }));
-        }
+        console.log('DatabaseManager Initializing...');
 
-        // Initialize Cloud Sync if available
-        if (typeof CloudDB !== 'undefined' && typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured) {
-            console.log('☁️ Connecting to Firebase...');
+        // Load settings first (needed for branding etc)
+        this.loadSettings();
+
+        // Safe recovery from cloud
+        if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
             this.updateCloudStatus('connecting');
-
-            // 1. Monitor actual connection state
-            CloudDB.monitorConnection((isConnected) => {
-                if (isConnected) {
-                    this.updateCloudStatus('online');
-                } else {
-                    console.log('🔥 Disconnected from Firebase');
-                    this.updateCloudStatus('offline');
-                }
+            CloudDB.syncCloudToLocal().finally(() => {
+                this.updateCloudStatus('online');
             });
 
+            // Re-Sync templates and status periodically
             CloudDB.listenForUpdates(remoteStudents => {
                 this.updateCloudStatus('online');
-                const isSyncInitialized = localStorage.getItem('cloudSyncInitialized');
-                const localStudents = this.getStudents(true);
-
-                if (remoteStudents.length === 0 && localStudents.length > 0) {
-                    if (!isSyncInitialized) {
-                        // First time connecting and cloud is empty: Push local to cloud
-                        console.log('☁️ Cloud empty, initializing with local data...');
-                        CloudDB.syncLocalToCloud().catch(err => console.error('Initial sync failed:', err));
-                    } else {
-                        // Cloud became empty after initialization? This is suspicious.
-                        // Don't wipe local data automatically. Allow manual sync to decide.
-                        console.warn('⚠️ Cloud is empty but local storage has data. Skipping automatic wipe for safety.');
-                        if (typeof UI !== 'undefined' && UI.showNotification)
-                            UI.showNotification('⚠️ تنبيه: السحابة فارغة ولكن يوجد بيانات محلياً. لم يتم المسح لضمان السلامة.');
-                    }
-                } else if (remoteStudents.length > 0) {
-                    // Pull and merge from cloud
+                if (remoteStudents && Array.isArray(remoteStudents)) {
+                    console.log(`☁️ Cloud update received: ${remoteStudents.length} students`);
                     this.mergeRemoteData(remoteStudents);
-                } else if (remoteStudents.length === 0 && localStudents.length === 0) {
-                    // Both empty, nothing to do
+                    // Force refresh visuals
+                    if (typeof UI !== 'undefined') {
+                        UI.updateStats();
+                        UI.renderStudents();
+                    }
                 }
-
-                localStorage.setItem('cloudSyncInitialized', 'true');
             }, (error) => {
                 console.error("Sync Error:", error);
                 this.updateCloudStatus('offline');
-                if (typeof UI !== 'undefined' && UI.showNotification)
-                    UI.showNotification('❌ فشل الاتصال بالسحابة: تأكد من إعدادات الإنترنت');
             });
 
-            // 3. Real-time Settings Listener
+            // Single Settings Listener
             CloudDB.listenForSettings(cloudSettings => {
-                const isInitial = !localStorage.getItem('cloudSyncInitialized');
-                const localSettings = JSON.parse(localStorage.getItem('appSettings') || '{}');
-
-                if (cloudSettings === null) {
-                    if (!isInitial) {
-                        // Safety: Don't wipe settings if they exist locally on the very first run
-                        if (localStorage.getItem('appSettings')) {
-                            console.log('🗑️ Synchronized settings wipe blocked (safety)');
-                            // localStorage.removeItem('appSettings'); // Disabled auto-wipe for safety
+                if (cloudSettings) {
+                    const localSettings = JSON.parse(localStorage.getItem('appSettings') || '{}');
+                    if (JSON.stringify(cloudSettings) !== JSON.stringify(localSettings)) {
+                        console.log('☁️ Remote settings updated/synced');
+                        localStorage.setItem('appSettings', JSON.stringify(cloudSettings));
+                        if (typeof UI !== 'undefined') {
+                            UI.applyBranding();
+                            UI.populateDynamicSelects();
                         }
-                    } else if (localSettings && Object.keys(localSettings).length > 0) {
-                        console.log('☁️ Cloud settings empty. Initializing cloud from local...');
-                        CloudDB.saveSettings(localSettings);
-                    }
-                } else if (JSON.stringify(cloudSettings) !== JSON.stringify(localSettings)) {
-                    console.log('☁️ Settings updated from cloud');
-                    localStorage.setItem('appSettings', JSON.stringify(cloudSettings));
-                    if (typeof UI !== 'undefined') {
-                        if (UI.applyBranding) UI.applyBranding();
-                        if (UI.populateDynamicSelects) UI.populateDynamicSelects();
-                        if (window.location.href.includes('settings.html') && UI.loadSettingsPage) UI.loadSettingsPage();
                     }
                 }
             });
 
-            // 4. Real-time Templates Listener
+            // Real-time Templates Listener
             CloudDB.listenForTemplates(cloudTemplates => {
-                const localTmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-                const isInitial = !localStorage.getItem('cloudSyncInitialized');
+                if (cloudTemplates && Array.isArray(cloudTemplates)) {
+                    const localTmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+                    // CLEAN CLOUD DATA before comparison to avoid loops (cloud has pdfData, local doesn't)
+                    const cleanCloud = cloudTemplates.map(t => {
+                        const copy = { ...t };
+                        if (copy.pdfData && copy.pdfData.length > 50000) {
+                            delete copy.pdfData;
+                            copy.hasLargePdf = true;
+                        }
+                        return copy;
+                    });
 
-                // If local is currently empty and cloud has data, sync it
-                if (cloudTemplates.length > 0 && (localTmpls.length === 0 || JSON.stringify(cloudTemplates) !== JSON.stringify(localTmpls))) {
-                    console.log('☁️ Templates sync started...');
-                    this.syncTemplatesLocally(cloudTemplates);
-                } else if (!isInitial && cloudTemplates.length === 0 && localTmpls.length > 0) {
-                    // Synchronized deletion
-                    console.log('🗑️ Synchronized deletion for all templates');
-                    localStorage.setItem('contractTemplates', JSON.stringify([]));
-                    if (typeof contractMgr !== 'undefined') contractMgr.init();
-                    if (typeof UI !== 'undefined' && UI.refreshData) UI.refreshData();
+                    if (JSON.stringify(cleanCloud) !== JSON.stringify(localTmpls)) {
+                        console.log('☁️ Templates updated from cloud');
+                        this.syncTemplatesLocally(cloudTemplates);
+                    }
                 }
             });
-            // Flags are handled by async listeners
+        }
+    }
+
+    async loadSettings() {
+        const local = localStorage.getItem('appSettings');
+        if (!local && typeof CloudDB !== 'undefined') {
+            const remote = await CloudDB.getSettings();
+            if (remote && Object.keys(remote).length > 0) {
+                localStorage.setItem('appSettings', JSON.stringify(remote));
+            }
+        }
+    }
+
+    async syncNow() {
+        if (!CloudDB.isReady()) {
+            alert('السحابة غير متصلة');
+            return;
+        }
+        UI.showNotification('⏳ جاري المزامنة الشاملة مع السيرفر...');
+        this.updateCloudStatus('connecting');
+        try {
+            await CloudDB.syncCloudToLocal();
+            this.updateCloudStatus('online');
+            UI.showNotification('✅ تمت المزامنة بنجاح!');
+        } catch (e) {
+            console.error(e);
+            this.updateCloudStatus('offline');
+            UI.showNotification('❌ فشلت المزامنة. تحقق من الإنترنت.');
         }
     }
 
@@ -199,61 +181,64 @@ class DatabaseManager {
         }
     }
 
-    mergeRemoteData(remoteStudents) {
+    async mergeRemoteData(remoteStudents) {
         if (!remoteStudents || !Array.isArray(remoteStudents)) return;
 
-        const localStudents = this.getStudents(true);
-        let hasChanges = false;
+        // FULL MIRROR SYNC: Local storage becomes an EXACT replica of the Cloud.
+        // If Cloud is empty (User zeroed the platform), local becomes empty too.
+        console.log(`🔄 Mirroring cloud state: ${remoteStudents.length} students found.`);
 
-        // Create a lookup for remote students
-        const remoteLookup = new Map();
-        remoteStudents.forEach(s => {
-            if (s && s.id) remoteLookup.set(String(s.id), s);
-        });
-
-        // 1. Process Local Students (Sync Updates, Handle Deletions carefully)
-        let updatedLocal = localStudents.map(local => {
-            if (!local || !local.id) return null;
-            const remote = remoteLookup.get(String(local.id));
-
-            if (remote) {
-                // Student exists in both: Update local if remote is different
-                if (JSON.stringify(local) !== JSON.stringify(remote)) {
-                    hasChanges = true;
-                    // Provide notification if status changed to signed
-                    if (local.contractStatus !== 'signed' && remote.contractStatus === 'signed') {
-                        if (typeof UI !== 'undefined' && UI.showNotification) {
-                            UI.showNotification(`🔔 تم توقيع عقد جديد: ${remote.studentName}`);
-                        }
-                    }
-                    return remote;
-                }
-                return local;
-            } else {
-                // Student exists LOCALLY but NOT in remote.
-                // SAFETY: To prevent data loss (like the user reported), we only delete local students
-                // that were DEFINITELY synced to the cloud before (e.g., have a signature or were old).
-                // For now, let's keep all local-only students to avoid accidental wipes.
-                console.log('ℹ️ Student remains local-only (not in cloud):', local.studentName);
-                return local;
-            }
-        }).filter(s => s !== null);
-
-        // 2. Add New Students from Cloud
-        remoteStudents.forEach(remote => {
-            if (!remote || !remote.id) return;
-            const existsLocally = localStudents.some(l => l && String(l.id) === String(remote.id));
-            if (!existsLocally) {
-                updatedLocal.push(remote);
-                hasChanges = true;
-                console.log('✨ New student received from cloud:', remote.studentName);
-            }
-        });
-
-        if (hasChanges) {
-            localStorage.setItem('students', JSON.stringify(updatedLocal));
-            if (typeof UI !== 'undefined' && UI.refreshData) UI.refreshData();
+        const mirroredStudents = [];
+        for (const remote of remoteStudents) {
+            if (!remote || !remote.id) continue;
+            // Offload images to IndexedDB during mirroring
+            await this.offloadHeavyData(remote);
+            mirroredStudents.push(this.cleanStudentForStorage(remote));
         }
+
+        try {
+            localStorage.setItem('students', JSON.stringify(mirroredStudents));
+            if (typeof UI !== 'undefined' && UI.renderStudents) UI.renderStudents();
+            if (typeof UI !== 'undefined' && UI.updateStats) UI.updateStats();
+        } catch (e) {
+            if (e.name === 'QuotaExceededError') {
+                // Emergency cleanup if storage is full
+                const stripped = mirroredStudents.map(s => this.cleanStudentForStorage(s));
+                localStorage.setItem('students', JSON.stringify(stripped));
+            }
+        }
+    }
+
+    // Helper to move heavy fields to IndexedDB
+    async offloadHeavyData(student) {
+        if (typeof contractMgr === 'undefined') return;
+        const heavyFields = ['signature', 'signatureData', 'idImage', 'idCardImage', 'pdfData'];
+        for (const field of heavyFields) {
+            if (student[field] && student[field].length > 1000) {
+                await contractMgr.saveMedia(student.id, field, student[field]);
+            }
+        }
+    }
+
+    // Helper to remove heavy fields before localStorage
+    cleanStudentForStorage(student) {
+        const cleaned = { ...student };
+        const heavyFields = ['signature', 'signatureData', 'idImage', 'idCardImage', 'pdfData'];
+        heavyFields.forEach(f => delete cleaned[f]);
+        cleaned.hasOffloadedData = true;
+        return cleaned;
+    }
+
+    // Helper to re-attach heavy data for specific operations
+    async hydrateStudent(student) {
+        if (typeof contractMgr === 'undefined' || !student.hasOffloadedData) return student;
+        const fullStudent = { ...student };
+        const heavyFields = ['signature', 'signatureData', 'idImage', 'idCardImage', 'pdfData'];
+        for (const field of heavyFields) {
+            const data = await contractMgr.getMedia(student.id, field);
+            if (data) fullStudent[field] = data;
+        }
+        return fullStudent;
     }
 
     getSettings() {
@@ -281,19 +266,8 @@ class DatabaseManager {
             if (saved.levels) saved.levels = [...new Set(saved.levels)];
             if (saved.grades) saved.grades = [...new Set(saved.grades)];
 
-            // Ensure National ID exists in customFields if not present
-            const currentFields = saved.customFields || [];
-            const hasNationalId = currentFields.some(f => f.label.includes('الهوية') || f.id === 'nationalId');
-
-            if (!hasNationalId) {
-                // If it's a legacy save, we might want to merge defaults or just leave it. 
-                // But user explicitly asked for valid ID, so let's ensure the pattern exists.
-                // We won't force-push it if the user deleted it, but for now let's make it available if customFields is empty.
-                if (currentFields.length === 0) {
-                    saved.customFields = defaults.customFields;
-                }
-            }
-
+            // We no longer force National ID into customFields if it's missing.
+            // This allows the user to delete "رقم الهوية" or have empty customFields.
             const settings = { ...defaults, ...saved };
 
             // --- Migration/Fix for numerical grades ---
@@ -312,10 +286,35 @@ class DatabaseManager {
 
     saveSettings(settings) {
         localStorage.setItem('appSettings', JSON.stringify(settings));
-        // ADDED: Sync settings to the cloud so Google Forms can read them
         if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
             CloudDB.saveSettings(settings);
-            console.log('☁️ Attempting to sync settings to the cloud...');
+        }
+    }
+
+    async migrateLargeDataToIndexedDB() {
+        console.log('📦 Starting storage quota optimization migration...');
+        const students = this.getStudents(true);
+        let migratedCount = 0;
+
+        for (let i = 0; i < students.length; i++) {
+            const s = students[i];
+            const originalSize = JSON.stringify(s).length;
+
+            // If student has heavy fields in localStorage, move them
+            const heavyFields = ['signature', 'signatureData', 'idImage', 'idCardImage', 'pdfData'];
+            let needsOffload = false;
+            heavyFields.forEach(f => { if (s[f] && s[f].length > 500) needsOffload = true; });
+
+            if (needsOffload) {
+                await this.offloadHeavyData(s);
+                students[i] = this.cleanStudentForStorage(s);
+                migratedCount++;
+            }
+        }
+
+        if (migratedCount > 0) {
+            localStorage.setItem('students', JSON.stringify(students));
+            console.log(`✅ Storage Optimized: Moved ${migratedCount} large student records to IndexedDB.`);
         }
     }
 
@@ -337,28 +336,33 @@ class DatabaseManager {
         }
     }
 
-    saveStudent(student) {
-        // VALIDATION: Never save garbage
-        if (!student || !student.studentName || student.studentName === 'undefined') {
-            console.warn('⚠️ Attempted to save invalid student blocked:', student);
-            return;
-        }
+    async saveStudent(student) {
+        if (!student || !student.studentName || student.studentName === 'undefined') return;
 
-        const students = this.getStudents(true);
-        const existingIndex = students.findIndex(s => String(s.id) === String(student.id));
-        if (student.id && existingIndex !== -1) {
-            students[existingIndex] = { ...students[existingIndex], ...student };
-        } else {
-            if (!student.id) student.id = Date.now().toString();
-            // Double check duplication by name if ID is new (rare case but safe)
-            // const dup = students.find(s => s.studentName === student.studentName && s.parentWhatsapp === student.parentWhatsapp);
-            // if (!dup) 
-            students.push(student);
-        }
-        this.saveStudents(students);
+        // Ensure student has an ID BEFORE sending to the cloud
+        if (!student.id) student.id = Date.now().toString();
+
+        // 1. Send FULL data to Cloud first
         if (typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
             CloudDB.saveStudent(student);
         }
+
+        // 2. Offload heavy data to IndexedDB
+        await this.offloadHeavyData(student);
+
+        // 3. Save cleaned metadata to localStorage
+        const students = this.getStudents(true);
+        const cleaned = this.cleanStudentForStorage(student);
+        const existingIndex = students.findIndex(s => String(s.id) === String(student.id));
+
+        if (existingIndex !== -1) {
+            students[existingIndex] = { ...students[existingIndex], ...cleaned };
+        } else {
+            if (!cleaned.id) cleaned.id = Date.now().toString();
+            students.push(cleaned);
+        }
+
+        this.saveStudents(students);
         return student;
     }
 
@@ -396,7 +400,7 @@ class DatabaseManager {
         if (idx !== -1) {
             students[idx].contractStatus = status;
             this.saveStudents(students);
-            if (typeof CloudDB !== 'undefined') {
+            if (typeof CloudDB !== 'undefined' && CloudDB.updateContract) {
                 CloudDB.updateContract(id, { contractStatus: status });
             }
             return true;
@@ -503,7 +507,7 @@ class DatabaseManager {
         return { promotedCount, archivedCount };
     }
 
-    syncNow() {
+    async syncNow() {
         console.log('🔄 Manual Sync Starting...');
         if (typeof CloudDB === 'undefined') {
             if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('❌ فشل: لم يتم تحميل ملف الإعدادات السحابية');
@@ -518,11 +522,12 @@ class DatabaseManager {
 
         if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('⏳ جاري جلب البيانات من السحابة... يرجى الانتظار');
 
-        CloudDB.getStudents().then(remoteStudents => {
+        try {
+            const remoteStudents = await CloudDB.getStudents();
             console.log('☁️ Sync result:', remoteStudents ? remoteStudents.length : 0, 'students');
 
             if (remoteStudents && Array.isArray(remoteStudents)) {
-                this.mergeRemoteData(remoteStudents);
+                await this.mergeRemoteData(remoteStudents);
                 if (typeof UI !== 'undefined' && UI.showNotification)
                     UI.showNotification(`✅ تمت المزامنة بنجاح: تم جلب ${remoteStudents.length} طالباً`);
                 if (typeof UI !== 'undefined') {
@@ -533,11 +538,10 @@ class DatabaseManager {
                 if (typeof UI !== 'undefined' && UI.showNotification)
                     UI.showNotification('ℹ️ السحابة فارغة حالياً (لا توجد بيانات طلاب)');
             }
-        }).catch(err => {
+        } catch (err) {
             console.error('Detailed Manual sync error:', err);
             let technicalDetail = err.message || (typeof err === 'string' ? err : 'خطأ غير معروف');
 
-            // Helpful translation for common errors
             let friendlyError = technicalDetail;
             if (technicalDetail.includes('permission_denied')) friendlyError = 'تم رفض الوصول (Permissions Denied). تحقق من إعدادات الخادم.';
             if (technicalDetail.includes('network')) friendlyError = 'مشكلة في الشبكة. قد يكون السبب عدم ضبط وقت الجهاز بشكل صحيح.';
@@ -545,11 +549,10 @@ class DatabaseManager {
             if (typeof UI !== 'undefined' && UI.showNotification)
                 UI.showNotification(`❌ فشل المزامنة: ${friendlyError}`);
 
-            // Direct alert for critical visibility
             if (friendlyError.includes('Access Denied') || friendlyError.includes('permission')) {
-                alert('⚠️ تنبيه أمني: الخادم السحابي يرفض الوصول لهذه البيانات. قد تحتاج لمراجعة قواعد الحماية (Rules) في Firebase.');
+                alert('⚠️ تنبيه أمني: الخادم السحابي يرفض الوصول لهذه البيانات. قد تحتاج لمراجعة إعدادات الخادم.');
             }
-        });
+        }
     }
 }
 
@@ -735,6 +738,14 @@ const UI = {
         if (this.modal) {
             this.modal.classList.remove('active');
             this.modal.style.display = 'none';
+        }
+    },
+
+    closePreviewModal() {
+        const modal = document.getElementById('contractPreviewModal');
+        if (modal) {
+            modal.classList.remove('active');
+            modal.style.display = 'none';
         }
     },
 
@@ -993,7 +1004,7 @@ const UI = {
                                 تذكير
                             </button>`;
                 } else if (student.contractStatus === 'signed') {
-                    return `<button class="action-btn-main verify" onclick="markAsSigned('${student.id}')" title="توثيق العقد">
+                    return `<button class="action-btn-main verify" onclick="UI.markAsSigned('${student.id}')" title="توثيق العقد">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                                 توثيق
                             </button>`;
@@ -1131,31 +1142,34 @@ const UI = {
         return badges[status] || '<span class="status-badge">غير معروف</span>';
     },
     async generateContractLink(student) {
-        const settings = db.getSettings();
-        let basePath = settings.serverAddress || window.location.href.split('?')[0].replace('index.html', '').replace(/\/$/, '');
+        if (!student) throw new Error("بيانات الطالب غير متوفرة");
 
-        // Ensure protocol exists (defaults to https for production security)
-        if (basePath && !basePath.includes('://')) {
+        const settings = (typeof db !== 'undefined' && db.getSettings) ? db.getSettings() : {};
+
+        // DYNAMIC DOMAIN DETECTION
+        let basePath = settings.serverAddress;
+        if (!basePath || basePath.trim() === "") {
+            basePath = window.location.origin + window.location.pathname.replace('index.html', '').replace(/\/$/, '');
+        }
+
+        // Ensure protocol
+        if (basePath && !basePath.includes('://') && !basePath.startsWith('file:') && !basePath.startsWith('http')) {
             basePath = 'https://' + basePath;
         }
 
-        // Remove trailing slash if present
         basePath = basePath.replace(/\/$/, '');
-
-        // Hostname check for warning (only if not using a custom server address)
         const isLocal = !settings.serverAddress && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:');
 
-        // Get contract template content
+        // Get template
         const templateId = student.contractTemplateId;
         let template = null;
         if (typeof contractMgr !== 'undefined') {
             template = contractMgr.getContract(templateId) || contractMgr.getDefaultContract();
-            // IMPORTANT: Fetch full PDF data if it's missing from the shortcut object
             if (template && template.hasLargePdf && !template.pdfData) {
                 try {
                     template.pdfData = await contractMgr.getPdfFromDB(template.id);
                 } catch (e) {
-                    console.warn("Could not load PDF data for link generation:", e);
+                    console.warn("Could not load PDF data from IndexedDB:", e);
                 }
             }
         } else {
@@ -1163,40 +1177,34 @@ const UI = {
             template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
         }
 
-        // Ensure contract data is in the cloud as a fallback - CRITICAL for parent view
+        // Cloud sync fallback
         if (template && typeof CloudDB !== 'undefined' && CloudDB.isReady()) {
             const updateData = {
-                contractTitle: template.title,
+                contractTitle: template.title || 'عقد',
                 contractContent: template.content || '',
                 contractType: template.type || 'text',
                 contractTemplateId: template.id,
-                // These must be null to ensure we don't show old year's signature
-                contractStatus: 'pending',
-                signature: null,
-                signedAt: null
+                contractStatus: student.contractStatus || 'pending'
             };
             if (template.type === 'pdf_template') {
                 if (template.pdfData) updateData.pdfData = template.pdfData;
                 if (template.pdfFields) updateData.pdfFields = template.pdfFields;
             }
-            // Explicitly wait for this or at least log failure
-            CloudDB.updateContract(student.id, updateData).then(success => {
-                if (!success) console.warn("⚠️ Cloud sync failed for student contract data:", student.id);
-            });
+            if (CloudDB.updateContract) {
+                CloudDB.updateContract(student.id, updateData);
+            }
         }
 
-        const cleanVar = (v) => v ? String(v).replace(/[{}]/g, '').replace(/[ _]/g, '') : '';
         const dataToCompress = {
             i: student.id,
             s: student.studentName,
             l: student.studentLevel || '',
             g: student.studentGrade || '',
-            p: student.parentName,
-            e: student.parentEmail,
-            w: student.parentWhatsapp,
+            p: student.parentName || '',
+            e: student.parentEmail || '',
+            w: student.parentWhatsapp || '',
             y: student.contractYear || new Date().getFullYear().toString(),
             tid: student.contractTemplateId || '',
-            // Added new fields with robust lookup
             nid: student.nationalId || '',
             pnid: student.customFields?.parentNationalId || '',
             adr: student.address || student.customFields?.address || '',
@@ -1205,68 +1213,66 @@ const UI = {
             tr: student.customFields?.studentTrack || student.studentTrack || ''
         };
 
-        // Fallback: If critical fields are missing, search in customFields by label
-        if (student.customFields) {
-            const s = student.customFields;
-            const settings = db.getSettings();
-            (settings.customFields || []).forEach(f => {
-                const target = cleanVar(f.label);
-                // Level / Stage
-                if (target === 'المرحلة' || target === 'المرحله' || target === 'المرحلةالدراسية' || target === 'المرحلهالدراسيه' || target === 'مرحلة')
-                    dataToCompress.l = dataToCompress.l || s[f.id] || '';
-                // Grade
-                if (target === 'الصف' || target === 'الصفالدراسي')
-                    dataToCompress.g = dataToCompress.g || s[f.id] || '';
-                // National ID
-                if (target === 'هويةالطالب' || target === 'رقمهويةالطالب' || target === 'الرقمالقومي' || target === 'رقمهوية' || target === 'رقمالهوية' || target === 'هوية' || target === 'الهوية')
-                    dataToCompress.nid = dataToCompress.nid || s[f.id] || '';
-                // Parent National ID
-                if (target === 'هويةوليالأمر' || target === 'رقمهويةوليالأمر' || target === 'هويةوليالامر' || target === 'رقمهويةوليالامر')
-                    dataToCompress.pnid = dataToCompress.pnid || s[f.id] || '';
-            });
-        }
-
-        // Always include contract title and content when available
         if (template && template.title) {
             dataToCompress.t = template.title;
-            // Include content for text contracts (not PDF binary data)
             if (template.type !== 'pdf_template' && template.content) {
                 dataToCompress.c = template.content;
             }
         }
 
+        if (typeof LZString === 'undefined') {
+            throw new Error("مكتبة ضغط الروابط (LZString) غير محملة. يرجى تحديث الصفحة.");
+        }
+
         const compressed = LZString.compressToEncodedURIComponent(JSON.stringify(dataToCompress));
         const link = `${basePath}/contract.html?id=${student.id}&c=${compressed}`;
 
-        return { link, isLocal, isTooLong: link.length > 4000 };
+        return { link, isLocal, isTooLong: link.length > 4050 };
     },
 
     async copyContractLink(id) {
-        const student = db.getStudents().find(s => s.id === id);
+        const student = db.getStudents().find(s => String(s.id) === String(id));
         if (!student) return;
 
         this.showNotification('⏳ جاري تجهيز الرابط...');
-        const { link, isLocal, isTooLong } = await this.generateContractLink(student);
+        try {
+            const { link, isLocal, isTooLong } = await this.generateContractLink(student).catch(err => {
+                throw err;
+            });
 
-        if (isLocal) {
-            this.showNotification('⚠️ تنبيه: أنت تستخدم رابطاً محلياً، لن يفتح على أجهزة أخرى.');
+            if (isLocal) {
+                this.showNotification('⚠️ تنبيه: أنت تستخدم رابطاً محلياً، لن يفتح على أجهزة أخرى.');
+            }
+
+            if (isTooLong) {
+                alert('⚠️ تنبيه: نص العقد طويل جداً وقد لا يعمل الرابط بشكل سليم على بعض الهواتف.');
+            }
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(link).then(() => {
+                    this.showNotification('✅ تم نسخ رابط العقد!');
+                }).catch(() => {
+                    this.fallbackCopyLink(link);
+                });
+            } else {
+                this.fallbackCopyLink(link);
+            }
+        } catch (err) {
+            console.error(err);
+            alert(`❌ فشل تجهيز الرابط: ${err.message || 'خطأ غير معروف'}`);
         }
+    },
 
-        if (isTooLong) {
-            alert('⚠️ تنبيه: نص العقد طويل جداً وقد لا يعمل الرابط بشكل سليم على بعض الهواتف.');
-        }
-
-        navigator.clipboard.writeText(link).then(() => {
-            this.showNotification('✅ تم نسخ رابط العقد!');
-        }).catch(() => {
-            const el = document.createElement('textarea');
-            el.value = link;
-            document.body.appendChild(el);
-            el.select();
-            document.execCommand('copy');
-            document.body.removeChild(el);
-            this.showNotification('✅ تم نسخ الرابط!');
-        });
+    fallbackCopyLink(link) {
+        const el = document.createElement('textarea');
+        el.value = link;
+        el.style.position = 'absolute';
+        el.style.left = '-9999px';
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        this.showNotification('✅ تم نسخ الرابط!');
     },
 
     // sendContract is defined later in the file with more features
@@ -1313,105 +1319,73 @@ const UI = {
         `;
         errorBanner.style.display = 'block';
     },
-    async downloadContractPdf(id) {
-        const student = db.getStudents().find(s => s.id === id);
-        if (!student) return;
+    async downloadContractPdf(id, providedStudent = null) {
+        try {
+            let student = providedStudent;
+            if (!student) {
+                const students = db.getStudents(true);
+                student = students.find(s => String(s.id) === String(id));
+            }
+            if (!student) throw new Error("الطالب غير موجود");
 
-        // Determine Contract Type
-        const templateId = student.contractTemplateId;
-        let template = templateId ? contractMgr.getContract(templateId) : null;
-        if (!template) template = contractMgr.getDefaultContract();
+            if (typeof UI.showNotification === 'function') UI.showNotification('⏳ جاري تحضير ملف PDF...');
 
-        // FAILSAFE: If template still null (e.g. sync hasn't finished), try getting it directly
-        if (!template && templateId) {
-            const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-            template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
-        }
+            // HYDRATE: Load signatures/images from IndexedDB before generating PDF
+            student = await db.hydrateStudent(student);
 
-        if (!template) {
-            this.showNotification('⚠️ عذراً، لم يتم العثور على قالب العقد. يرجى الانتظار قليلاً للمزامنة أو تحديث الصفحة.');
-            return;
-        }
+            const templateId = student.contractTemplateId;
+            let template = (typeof contractMgr !== 'undefined')
+                ? contractMgr.getContract(templateId) || contractMgr.getDefaultContract()
+                : null;
 
-        if (template && template.type === 'pdf_template') {
-            this.showNotification('جاري إنشاء ملف PDF...');
-            try {
+            if (!template) {
+                const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
+                template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
+            }
+
+            if (!template) throw new Error("قالب العقد غير موجود");
+
+            if (template.type === 'pdf_template') {
                 const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
                 const blob = new Blob([pdfBytes], { type: 'application/pdf' });
                 const link = document.createElement('a');
                 link.href = window.URL.createObjectURL(blob);
                 link.download = `عقد_${student.studentName}.pdf`;
                 link.click();
-            } catch (err) {
-                console.error("PDF Generation Error:", err);
-                alert("حدث خطأ أثناء إنشاء ملف PDF: " + err.message);
+                if (typeof UI.showNotification === 'function') UI.showNotification('✅ تم تحميل الملف');
+                return;
             }
-            return;
-        }
 
-        // Use professional HTML to PDF layout (Harmonized with contract.js)
-        // High-Visibility Flash Capture (ENSURES RENDERING)
-        const overlay = document.createElement('div');
-        overlay.style.position = 'fixed';
-        overlay.style.top = '0';
-        overlay.style.left = '0';
-        overlay.style.width = '100vw';
-        overlay.style.height = '100vh';
-        overlay.style.background = 'white';
-        overlay.style.zIndex = '100000';
-        overlay.style.display = 'block'; // FIX: Changed from flex to block
-        overlay.style.textAlign = 'center';
-        overlay.style.overflowY = 'auto';
-        overlay.style.padding = '40px 0';
-        overlay.style.direction = 'rtl';
-        overlay.innerHTML = `
-            <div style="margin-bottom:20px; font-weight:bold; color:#1e3a8a; font-family:Cairo, sans-serif; font-size:18px;">جاري استخراج ملف PDF...</div>
-            <div id="capture-render-area" style="background:white; pointer-events:none; direction:rtl; text-align:right;">
-                ${this.getContractSummaryHTML(student)}
-            </div>
-        `;
-        document.body.appendChild(overlay);
+            // HTML to PDF (Standard)
+            const overlay = document.createElement('div');
+            overlay.className = 'pdf-render-overlay';
+            overlay.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:white; z-index:100000; overflow-y:auto; padding:40px 0; direction:rtl; text-align:center;';
+            overlay.innerHTML = `
+                <div style="margin-bottom:20px; font-weight:bold; color:#1e3a8a; font-family:Cairo, sans-serif; font-size:18px;">جاري استخراج ملف PDF...</div>
+                <div id="capture-render-area" style="background:white; pointer-events:none; direction:rtl; text-align:right; display:inline-block; width:210mm; min-height:297mm; padding:20mm; box-shadow:0 0 10px rgba(0,0,0,0.1);">
+                    ${this.getContractSummaryHTML(student)}
+                </div>
+            `;
+            document.body.appendChild(overlay);
 
-        const captureArea = overlay.querySelector('#capture-render-area');
-        const opt = {
-            margin: [15, 15, 15, 15],  // Equal margins on all sides
-            filename: `عقد_${student.studentName}.pdf`,
-            image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: {
-                scale: 2,
-                useCORS: true,
-                logging: true,
-                scrollY: 0,
-                scrollX: 0,
-                width: 794,
-                windowWidth: 794,
-                backgroundColor: '#ffffff',
-                letterRendering: true  // Better text rendering
-            },
-            jsPDF: {
-                unit: 'mm',
-                format: 'a4',
-                orientation: 'portrait',
-                compress: true
-            },
-            pagebreak: {
-                mode: ['avoid-all', 'css', 'legacy'],
-                before: '.page-break-before'
-            }
-        };
+            const captureArea = overlay.querySelector('#capture-render-area');
+            const opt = {
+                margin: [15, 15, 15, 15],
+                filename: `عقد_${student.studentName}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true, letterRendering: true, backgroundColor: '#ffffff' },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
+                pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+            };
 
-        if (window.html2pdf) {
-            // Delay to ensure all fonts and graphics are PAINTED
             setTimeout(() => {
                 html2pdf().from(captureArea).set(opt).toPdf().get('pdf').then((pdf) => {
                     const totalPages = pdf.internal.getNumberOfPages();
                     for (let i = 1; i <= totalPages; i++) {
                         pdf.setPage(i);
-                        pdf.setDrawColor(30, 58, 138); // #1e3a8a
-                        pdf.setLineWidth(0.5);
-                        pdf.rect(5, 5, 200, 287);
-                        pdf.setLineWidth(1.5);
-                        pdf.rect(7, 7, 196, 283);
+                        pdf.setDrawColor(30, 58, 138);
+                        pdf.setLineWidth(0.5); pdf.rect(5, 5, 200, 287);
+                        pdf.setLineWidth(1.5); pdf.rect(7, 7, 196, 283);
                     }
                 }).save().then(() => {
                     document.body.removeChild(overlay);
@@ -1419,18 +1393,22 @@ const UI = {
                 }).catch(err => {
                     console.error("PDF Error:", err);
                     document.body.removeChild(overlay);
-                    this.showNotification('❌ حدث خطأ أثناء التحميل');
-                    alert("نعتذر، فشل التحميل التلقائي. يرجى تجربة خيار الطباعة.");
+                    alert("فشل التحميل التلقائي. يرجى تجربة خيار الطباعة.");
                 });
-            }, 3000);
-        } else {
-            alert('مكتبة PDF غير محملة. الرجاء تحديث الصفحة.');
-            document.body.removeChild(overlay);
+            }, 2500);
+
+        } catch (err) {
+            console.error("Download Error:", err);
+            alert("حدث خطأ أثناء تحميل ملف PDF: " + err.message);
         }
     },
 
     async generateContractPdfBlob(student) {
         // Similar to downloadContractPdf but returns Blob for ZIP bundling
+
+        // HYDRATE: Load signatures/images from IndexedDB before generating PDF
+        student = await db.hydrateStudent(student);
+
         const templateId = student.contractTemplateId;
         const template = templateId ? contractMgr.getContract(templateId) : contractMgr.getDefaultContract();
 
@@ -1593,7 +1571,14 @@ const UI = {
                 text = studentData.parentWhatsapp || '';
             else if (target === 'العنوان') text = studentData.address || studentData.customFields?.address || '';
             else if (target === 'الجنسية') text = studentData.nationality || studentData.customFields?.nationality || '';
-            else if (target === 'التاريخ') text = new Date().toLocaleDateString('ar-EG');
+            else if (target === 'التاريخ') {
+                const now = new Date();
+                const d = now.getDate().toString().padStart(2, '0');
+                const m = (now.getMonth() + 1).toString().padStart(2, '0');
+                const y = now.getFullYear();
+                // For HTML based PDF, a span with dir="ltr" is most reliable
+                text = `<span dir="ltr" style="unicode-bidi:isolate;">${d}/${m}/${y}</span>`;
+            }
 
             const fixed = this.fixArabic(text); // Apply fixArabic
             if (fixed) contractContent = contractContent.replace(v, fixed);
@@ -1668,9 +1653,27 @@ const UI = {
 
     async previewContract(id) {
         try {
-            const students = db.getStudents();
-            const student = students.find(s => s.id === id);
+            if (typeof UI !== 'undefined' && UI.showNotification) {
+                UI.showNotification('⏳ جاري جلب أحدث بيانات العقد من السيرفر...');
+            }
+
+            const students = db.getStudents(true);
+            let student = students.find(s => String(s.id) === String(id));
+
+            // جلب أحدث بيانات (خصوصاً التوقيع) من السيرفر قبل المعاينة
+            if (typeof CloudDB !== 'undefined' && typeof isFirebaseConfigured !== 'undefined' && isFirebaseConfigured) {
+                try {
+                    const cloudStudent = await CloudDB.getStudent(id);
+                    if (cloudStudent) {
+                        student = { ...student, ...cloudStudent };
+                    }
+                } catch (e) { console.warn("Could not fetch latest for preview", e); }
+            }
+
             if (!student) throw new Error("الطالب غير موجود");
+
+            // HYDRATE
+            student = await db.hydrateStudent(student);
 
             const templateId = student.contractTemplateId;
             let template = (typeof contractMgr !== 'undefined')
@@ -1684,183 +1687,92 @@ const UI = {
 
             if (!template) throw new Error("قالب العقد غير موجود");
 
-            // Check for PDF Template (More robust check)
-            const isPdfTemplate = (template && template.type === 'pdf_template') ||
-                (template && template.content && template.content.startsWith('قالب PDF:')) ||
-                (student.contractType === 'pdf_template');
-
-            if (isPdfTemplate) {
+            if (template.type === 'pdf_template') {
                 if (typeof UI !== 'undefined' && UI.showNotification) UI.showNotification('جاري تحضير المعاينة...');
-                try {
-                    const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
-                    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                    const blobUrl = window.URL.createObjectURL(blob);
-                    window.open(blobUrl, '_blank');
-                } catch (err) {
-                    console.error("Preview Error:", err);
-                    alert("حدث خطأ أثناء معاينة PDF: " + err.message);
-                }
+                const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                window.open(window.URL.createObjectURL(blob), '_blank');
                 return;
             }
 
-            // Standard HTML Preview
+            // HTML Preview
+            // HYDRATE before preview
+            student = await db.hydrateStudent(student);
+
             const html = this.getContractSummaryHTML(student);
             const w = window.open('', '_blank');
             if (w) {
                 w.document.write(`
-                    <html><head><title>معاينة العقد - ${student.studentName}</title>
-                    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+                    <html><head><title>معاينة - ${student.studentName}</title>
                     <style>
-                        body { background: #cbd5e0; display: flex; justify-content: center; padding: 2cm 0; margin: 0; direction: rtl; }
+                        body { background: #cbd5e0; display: flex; justify-content: center; padding: 2cm 0; margin: 0; direction: rtl; font-family: 'Cairo', sans-serif; }
                         .preview-wrap { background: white; box-shadow: 0 0 20px rgba(0,0,0,0.2); width: 210mm; min-height: 297mm; }
-                        @media print {
-                            body { background: white; padding: 0; }
-                            .preview-wrap { box-shadow: none; width: 100%; }
-                        }
                     </style>
                     </head>
-                    <body>
-                        <div class="preview-wrap">${html}</div>
-                    </body>
-                    </html>
+                    <body><div class="preview-wrap">${html}</div></body></html>
                 `);
                 w.document.close();
-            } else {
-                alert('يرجى السماح بالنوافذ المنبثقة لمعاينة العقد.');
             }
         } catch (err) {
             console.error("Preview Error:", err);
-            alert("حدث خطأ أثناء معاينة العقد: " + err.message);
+            alert("فشلت المعاينة: " + err.message);
         }
     },
 
-    async downloadContractPdf(id, providedStudent = null) {
-        try {
-            let student = providedStudent;
-            if (!student) {
-                const students = db.getStudents();
-                student = students.find(s => s.id === id);
-            }
-            if (!student) throw new Error("الطالب غير موجود");
 
-            if (typeof UI.showNotification === 'function') UI.showNotification('جاري تحميل العقد...');
-
-            const templateId = student.contractTemplateId;
-            let template = (typeof contractMgr !== 'undefined')
-                ? contractMgr.getContract(templateId) || contractMgr.getDefaultContract()
-                : null;
-
-            if (!template) {
-                const tmpls = JSON.parse(localStorage.getItem('contractTemplates') || '[]');
-                template = tmpls.find(c => c.id === templateId) || tmpls.find(c => c.isDefault) || tmpls[0];
-            }
-
-            if (!template) throw new Error("قالب العقد غير موجود");
-
-            // Check for PDF Template
-            const isPdfTemplate = (template && template.type === 'pdf_template') ||
-                (template && template.content && template.content.startsWith('قالب PDF:')) ||
-                (student.contractType === 'pdf_template');
-
-            if (isPdfTemplate) {
-                const pdfBytes = await contractMgr.generatePdfFromTemplate(template, student);
-                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-
-                // Create link and download
-                const link = document.createElement('a');
-                link.href = window.URL.createObjectURL(blob);
-                const dateStr = new Date().toISOString().split('T')[0];
-                link.download = `عقد-${student.studentName}-${dateStr}.pdf`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            } else {
-                // HTML Contract Download (Using html2pdf)
-                const container = document.createElement('div');
-                container.style.position = 'absolute';
-                container.style.left = '-9999px';
-                container.style.width = '210mm'; // A4 width
-                container.style.background = 'white';
-                container.innerHTML = this.getContractSummaryHTML(student);
-                document.body.appendChild(container);
-
-                // Use html2pdf
-                if (typeof html2pdf === 'undefined') {
-                    // Fallback to print
-                    document.body.removeChild(container);
-                    this.previewContract(id);
-                    return;
-                }
-
-                const opt = {
-                    margin: 10,
-                    filename: `عقد-${student.studentName}.pdf`,
-                    image: { type: 'jpeg', quality: 0.98 },
-                    html2canvas: { scale: 2, useCORS: true, scrollY: 0, letterRendering: true },
-                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
-                };
-
-                await html2pdf().from(container).set(opt).save();
-                document.body.removeChild(container);
-                if (typeof UI.showNotification === 'function') UI.showNotification('✅ تم تحميل العقد بنجاح');
-            }
-        } catch (err) {
-            console.error("Download Error:", err);
-            alert("حدث خطأ أثناء تحميل العقد: " + err.message);
-        }
-    },
 
     async sendContract(id) {
-        // Simple WhatsApp Link
         const students = db.getStudents();
         const student = students.find(s => String(s.id) === String(id));
-        if (!student) {
-            console.warn('Student not found for ID:', id);
-            return;
+        if (!student) return;
+
+        // EMERGENCY: Open WhatsApp blank immediately to bypass popup blockers on mobile
+        // Many mobile browsers block window.open if it's not immediately after a click (async await breaks this)
+        const waWindow = window.open('', '_blank');
+        if (waWindow) {
+            waWindow.document.write('<html><head><title>جاري التحويل...</title><style>body{font-family:Cairo,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;background:#f0f2f5;color:#128c7e;}</style></head><body><div style="text-align:center;"><h2>⏳ جاري تحضير العقد...</h2><p>سيتم فتح واتساب تلقائياً خلال لحظات</p></div></body></html>');
         }
 
-        const settings = db.getSettings();
-        let basePath = settings.serverAddress || window.location.href.split('?')[0].replace('index.html', '').replace(/\/$/, '');
+        try {
+            const settings = db.getSettings();
+            this.showNotification('⏳ جاري تحضير الرابط والمزامنة...');
 
-        // Get contract template content
-        const templateId = student.contractTemplateId;
-        const template = (typeof contractMgr !== 'undefined')
-            ? contractMgr.getContract(templateId) || contractMgr.getDefaultContract()
-            : JSON.parse(localStorage.getItem('contractTemplates') || '[]').find(c => c.id === templateId || c.isDefault);
+            const { link, isLocal, isTooLong } = await this.generateContractLink(student).catch(err => {
+                if (waWindow) waWindow.close();
+                throw err;
+            });
 
-        // PDF Template links now work via CloudDB sync
-        this.showNotification('⏳ جاري تحضير الرابط والمزامنة...');
-        const { link, isLocal, isTooLong } = await this.generateContractLink(student);
+            const msg = `* عقد تسجيل إلكتروني - مدارس دانة العلوم * 📝
 
-        if (isLocal) {
-            alert('⚠️ تنبيه: أنت تقوم بإرسال رابط محلي (localhost). هذا الرابط لن يفتح لدى ولي الأمر إلا إذا كان في نفس شبكة الواي فاي أو كان الموقع مرفوعاً على الإنترنت.');
-        }
+مرحباً ${student.parentName || ''},
+يرجى الاطلاع على عقد التسجيل الخاص بالطالب / ة: * ${student.studentName} *
 
-        if (isTooLong) {
-            alert('⚠️ تنبيه: نص العقد طويل جداً، قد يتم حظر الرابط من قبل واتساب. يفضل استخدام نص أقصر أو تحميله كـ PDF.');
-        }
-
-        const msg = `* عقد تسجيل إلكتروني - مدارس دانة العلوم * 📝
-
-                    مرحباً ${student.parentName || ''},
-                    يرجى الاطلاع على عقد التسجيل الخاص بالطالب / ة: * ${student.studentName} *
-
-                للتعميد والتوقيع، يرجى الضغط على الرابط التالي:
+للتعميد والتوقيع، يرجى الضغط على الرابط التالي:
 🔗 اضغط هنا للتوقيع 🔗
 ${link}
 
 مع تحيات،
 * مدارس دانة العلوم * `;
 
-        const url = `https://wa.me/${student.parentWhatsapp.replace(/[^\d]/g, '')}?text=${encodeURIComponent(msg)}`;
-        window.open(url, '_blank');
+            const url = `https://wa.me/${student.parentWhatsapp.replace(/[^\d]/g, '')}?text=${encodeURIComponent(msg)}`;
 
-        // PRESERVE SIGNATURE: Only update to 'sent' if it's currently 'pending'
-        // If it was already 'signed' or 'verified', don't set it back to 'sent'
-        if (student.contractStatus === 'pending') {
-            db.updateStudentStatus(id, 'sent');
-            this.updateStats();
-            this.renderStudents();
+            if (waWindow) {
+                waWindow.location.href = url;
+            } else {
+                // Fallback if window was blocked initially
+                window.open(url, '_blank');
+            }
+
+            // Sync Status
+            if (student.contractStatus === 'pending') {
+                db.updateStudentStatus(id, 'sent');
+                this.updateStats();
+                this.renderStudents();
+            }
+        } catch (err) {
+            console.error(err);
+            if (waWindow) waWindow.close();
+            alert(`❌ فشل تحضير الرابط: ${err.message || 'يرجى التأكد من اتصال الإنترنت'}`);
         }
     },
 
@@ -2078,12 +1990,6 @@ ${link}
 
     // --- New Settings UI Functions ---
     switchSettingsTab(tabId) {
-        // Update Buttons
-        const buttons = document.querySelectorAll('.tab-btn');
-        buttons.forEach(btn => btn.classList.remove('active'));
-        const activeBtn = Array.from(buttons).find(btn => btn.getAttribute('onclick')?.includes(tabId));
-        if (activeBtn) activeBtn.classList.add('active');
-
         // Hide all contents
         const contents = document.querySelectorAll('.tab-content');
         contents.forEach(content => {
@@ -2108,6 +2014,17 @@ ${link}
             content.style.setProperty('display', 'block', 'important');
         } else {
             console.warn(`Tab content not found for ID: ${tabId}`);
+        }
+
+        // Update Buttons
+        const buttons = document.querySelectorAll('.tab-btn');
+        buttons.forEach(btn => btn.classList.remove('active'));
+
+        const activeBtn = document.querySelector(`.tab-btn[onclick*="'${tabId}'"]`);
+        if (activeBtn) activeBtn.classList.add('active');
+
+        if (tabId === 'migration') {
+            if (typeof this.refreshArchiveTable === 'function') this.refreshArchiveTable();
         }
     },
 
@@ -2144,10 +2061,29 @@ ${link}
 
         container.innerHTML = items.length ? items.map(item => `
             <div class="chip">
-                ${item}
-                <button onclick="UI.removeChip('${storageId}', '${item}')">&times;</button>
+                <span>${item}</span>
+                <div style="display:flex; align-items:center; gap: 4px; margin-right: 8px;">
+                    <button onclick="UI.editChip('${storageId}', '${item}')" style="background:rgba(99, 102, 241, 0.1); border:none; color:var(--primary-main); font-size:12px; cursor:pointer; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:all 0.2s;" title="تعديل" onmouseover="this.style.background='rgba(99, 102, 241, 0.2)'" onmouseout="this.style.background='rgba(99, 102, 241, 0.1)'">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    </button>
+                    <button onclick="UI.removeChip('${storageId}', '${item}')" style="background:rgba(239, 68, 68, 0.1); border:none; color:var(--danger); border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.2)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.1)'">&times;</button>
+                </div>
             </div>
         `).join('') : '<div class="chip-empty">لا توجد عناصر مضافة</div>';
+    },
+
+    editChip(storageId, value) {
+        let currentVal = document.getElementById(storageId).value;
+        let items = currentVal ? currentVal.split(',') : [];
+
+        const index = items.indexOf(value);
+        if (index === -1) return;
+
+        const newValue = window.prompt("تعديل الاسم:", value);
+        if (newValue !== null && newValue.trim() !== '') {
+            items[index] = newValue.trim();
+            this.renderChips(storageId, items);
+        }
     },
 
     // Custom Fields Management
@@ -2171,7 +2107,8 @@ ${link}
         let fields = [];
         try { fields = JSON.parse(hiddenInput.value || '[]'); } catch (e) { }
 
-        fields = fields.filter(f => f.id !== id);
+        // Use loose/string comparison in case IDs are mixed types
+        fields = fields.filter(f => String(f.id) !== String(id));
         this.renderCustomFields(fields);
     },
 
@@ -2188,14 +2125,33 @@ ${link}
                     <span class="custom-field-label">${f.label}</span>
                     <span class="custom-field-type">النوع: ${f.type === 'text' ? 'نص' : f.type === 'number' ? 'رقم' : 'تاريخ'}</span>
                 </div>
-                <button class="btn btn-icon btn-danger" onclick="UI.deleteCustomField(${f.id})" style="width:30px; height:30px; min-width:30px;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                </button>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn btn-icon btn-primary" onclick="UI.editCustomField('${f.id}')" style="width:36px; height:36px; min-width:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:var(--primary-main); border:none; box-shadow:0 2px 4px rgba(99, 102, 241, 0.2);" title="تعديل">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    </button>
+                    <button class="btn btn-icon btn-danger" onclick="UI.deleteCustomField('${f.id}')" style="width:30px; height:30px; min-width:30px;" title="حذف">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
+                </div>
             </div>
         `).join('') : '<div class="chip-empty">لا توجد حقول إضافية</div>';
+    },
 
-        // Also update the form in the modal dynamically if open? 
-        // Better to handle that in openModal
+    editCustomField(id) {
+        const hiddenInput = document.getElementById('customFieldsSetting');
+        let fields = [];
+        try { fields = JSON.parse(hiddenInput.value || '[]'); } catch (e) { }
+
+        const fieldIndex = fields.findIndex(f => String(f.id) === String(id));
+        if (fieldIndex === -1) return;
+
+        const currentLabel = fields[fieldIndex].label;
+        const newLabel = window.prompt("تعديل اسم الحقل:", currentLabel);
+
+        if (newLabel !== null && newLabel.trim() !== '') {
+            fields[fieldIndex].label = newLabel.trim();
+            this.renderCustomFields(fields);
+        }
     },
 
     renderStudentFormFields(student = null) {
@@ -2314,10 +2270,15 @@ ${link}
 
             this.updateStampPreview();
 
-            // Switch to General tab by default if no active tab
-            if (!document.querySelector('.tab-content.active')) {
-                this.switchSettingsTab('general');
+            // Always force a render of the active tab to fix any corrupted inline display states
+            const activeTabBtn = document.querySelector('.tab-btn.active');
+            let targetTab = 'general';
+            if (activeTabBtn) {
+                const match = activeTabBtn.getAttribute('onclick')?.match(/switchSettingsTab\(['"]([^'"]+)['"]\)/);
+                if (match) targetTab = match[1];
             }
+            this.switchSettingsTab(targetTab);
+
         } catch (e) {
             console.error('Error loading settings page:', e);
         }
@@ -2621,44 +2582,97 @@ ${link}
     },
 
 
-    handleLogin() {
+    async handleLogin() {
         const usernameInput = document.getElementById('adminUserInput');
         const passwordInput = document.getElementById('adminPassInput');
         const errorMsg = document.getElementById('loginError');
         const loginOverlay = document.getElementById('loginOverlay');
+        const loginBtn = document.querySelector('.btn-primary[onclick*="handleLogin"]');
 
         if (!usernameInput || !passwordInput) return;
 
         const inputUser = usernameInput.value.trim();
         const inputPass = passwordInput.value.trim();
 
+        // 1. Initial Local Check
         const settings = db.getSettings();
         const storedUser = settings?.adminUsername || 'admin';
         const storedPass = settings?.adminPassword || 'admin';
 
-        // Strict Matching: Security first
-        const isMatch = inputUser === storedUser && inputPass === storedPass;
+        let isMatch = inputUser === storedUser && inputPass === storedPass;
+
+        // 2. Cloud Fallback (Critical for new devices)
+        if (!isMatch && typeof CloudDB !== 'undefined') {
+            if (loginBtn) {
+                loginBtn.innerHTML = 'جاري التحقق من السحابة...';
+                loginBtn.disabled = true;
+            }
+            try {
+                // Try fetching settings using the input credentials as a "one-time key"
+                const cloudSettings = await CloudDB.getSettings(inputUser, inputPass);
+
+                // If it's a valid object and NOT an error response, we are authorized
+                if (cloudSettings && !cloudSettings.error && cloudSettings.adminUsername) {
+                    const cUser = cloudSettings.adminUsername;
+                    const cPass = cloudSettings.adminPassword;
+
+                    if (inputUser === cUser && inputPass === cPass) {
+                        isMatch = true;
+                        // Update local immediately for next time
+                        localStorage.setItem('appSettings', JSON.stringify(cloudSettings));
+                        console.log('✅ Cloud Login Successful - Local settings updated');
+                    }
+                }
+            } catch (e) { console.error('Cloud login fallback failed', e); }
+            finally {
+                if (loginBtn) {
+                    loginBtn.innerHTML = 'دخول النظام';
+                    loginBtn.disabled = false;
+                }
+            }
+        }
 
         if (isMatch) {
-            console.log('✅ Login Successful');
+            console.log('✅ Login Authorized. Syncing cloud data...');
 
-            if (inputUser === 'admin' && inputPass === 'admin') {
-                alert('⚠️ تنبيه أمني هام:\nأنت تستخدم بيانات الدخول الافتراضية (admin/admin).\nهذا يشكل خطراً أمنياً كبيراً. يرجى التوجه فوراً لقسم الإعدادات وتغيير بيانات الدخول.');
+            if (loginBtn) {
+                loginBtn.innerHTML = '<span class="spinner"></span> جاري جلب بياناتك...';
+                loginBtn.disabled = true;
             }
 
-            sessionStorage.setItem('isLoggedIn', 'true');
-            if (loginOverlay) loginOverlay.style.display = 'none';
-            this.updateStats();
-            this.renderStudents();
-            this.populateDynamicSelects();
-            this.applyBranding();
+            try {
+                // FORCE RECOVERY immediately
+                await CloudDB.syncCloudToLocal();
+                console.log('✅ Cloud Data Recovered Successfully');
+
+                // Set login session ONLY after data is verified locally
+                sessionStorage.setItem('isLoggedIn', 'true');
+
+                if (loginOverlay) loginOverlay.style.display = 'none';
+
+                // Refresh entire UI with new data
+                this.updateStats();
+                this.renderStudents();
+                this.populateDynamicSelects();
+                this.applyBranding();
+
+                if (typeof UI !== 'undefined' && UI.showNotification) {
+                    UI.showNotification('✅ تم تسجيل الدخول ومزامنة الطلاب والعقود');
+                }
+            } catch (err) {
+                console.error('Initial Sync Failed:', err);
+                // Fallback for weird network issues
+                sessionStorage.setItem('isLoggedIn', 'true');
+                if (loginOverlay) loginOverlay.style.display = 'none';
+                this.refreshData();
+            }
         } else {
             console.warn('❌ Login Failed');
             if (errorMsg) {
                 errorMsg.style.display = 'block';
                 errorMsg.innerHTML = `❌ بيانات الدخول غير صحيحة.`;
             }
-            // Shake effect for feedback
+            // Shake effect
             const card = usernameInput.closest('.card');
             if (card) {
                 card.style.animation = 'none';
@@ -2668,14 +2682,11 @@ ${link}
         }
     },
 
-    handleLogout() {
-        sessionStorage.removeItem('isLoggedIn');
-        window.location.reload();
-    },
-
     checkLogin() {
         const loginOverlay = document.getElementById('loginOverlay');
-        if (sessionStorage.getItem('isLoggedIn') === 'true') {
+        const isLoggedIn = sessionStorage.getItem('isLoggedIn') === 'true' || localStorage.getItem('isLoggedIn') === 'true';
+
+        if (isLoggedIn) {
             if (loginOverlay) loginOverlay.style.display = 'none';
             this.applyBranding();
             this.updateStats();
@@ -2683,6 +2694,14 @@ ${link}
             this.populateDynamicSelects();
         } else {
             if (loginOverlay) loginOverlay.style.display = 'flex';
+        }
+    },
+
+    logout() {
+        if (confirm('هل أنت متأكد من تسجيل الخروج؟')) {
+            sessionStorage.removeItem('isLoggedIn');
+            localStorage.removeItem('isLoggedIn');
+            window.location.reload();
         }
     },
 
@@ -2706,43 +2725,54 @@ ${link}
                 const workbook = XLSX.read(data, { type: 'array' });
                 const firstSheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[firstSheetName];
-                const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-                if (jsonData.length === 0) {
+                // Get raw 2D array to find the true header row
+                const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                if (rawData.length === 0) {
                     this.showNotification('⚠️ الملف فارغ');
                     return;
                 }
 
-                // 1. Validate Headers Before Processing Rows
-                const firstRow = jsonData[0];
-                const columnKeys = Object.keys(firstRow);
-                const normalize = (s) => String(s || '').trim().replace(/[أإآ]/g, 'ا').toLowerCase();
-                const matchedHeaders = [];
-                const missingHeaders = [];
+                // Find header row index
+                let headerRowIndex = -1;
+                const normalizeConfig = (s) => String(s || '').trim().replace(/[أإآ]/g, 'ا').toLowerCase();
 
-                const requiredFields = [
-                    { label: 'اسم الطالب', search: ['اسم الطالب', 'الاسم', 'Name'] },
-                    { label: 'رقم الواتساب', search: ['رقم الواتساب', 'رقم الواتس', 'الجوال', 'رقم الجوال', 'WhatsApp', 'Phone'] },
-                    { label: 'المسار', search: ['المسار', 'مسار', 'Track'] },
-                    { label: 'المرحلة', search: ['المرحلة', 'المرحله', 'Level'] },
-                    { label: 'الصف', search: ['الصف', 'Grade'] },
-                    { label: 'هوية الطالب', search: ['هوية الطالب', 'هوية الطالب', 'الهوية', 'National ID', 'Id'] },
-                    { label: 'هوية ولي الأمر', search: ['هوية ولي الأمر', 'هوية ولي الامر', 'Parent ID', 'ParentID'] }
-                ];
+                for (let i = 0; i < Math.min(20, rawData.length); i++) {
+                    const row = rawData[i];
+                    if (!Array.isArray(row)) continue;
+                    if (row.some(cell => normalizeConfig(cell).includes('اسم الطالب'))) {
+                        headerRowIndex = i;
+                        break;
+                    }
+                }
 
-                requiredFields.forEach(field => {
-                    const normalizedPossible = field.search.map(normalize);
-                    const foundKey = columnKeys.find(rk => normalizedPossible.includes(normalize(rk)));
-                    if (foundKey) matchedHeaders.push(field.label);
-                    else missingHeaders.push(field.label);
-                });
-
-                if (missingHeaders.length > 0) {
-                    const errorMsg = `❌ الملف لا يحتوي على الأعمدة المطلوبة أو المسميات غير معروفة:\n\n` +
-                        missingHeaders.map(h => `- ${h}`).join('\n') +
-                        `\n\nيرجى تعديل مسميات الأعمدة في ملف الإكسل والمحاولة مرة أخرى.`;
-                    alert(errorMsg);
+                if (headerRowIndex === -1) {
+                    alert('❌ تعذر العثور على عمود "اسم الطالب" في الملف. يرجى مراجعة الملف.');
                     input.value = '';
+                    return;
+                }
+
+                const headerRow = rawData[headerRowIndex];
+                const jsonData = [];
+                for (let i = headerRowIndex + 1; i < rawData.length; i++) {
+                    const rowArray = rawData[i];
+                    if (!rowArray || rowArray.length === 0) continue;
+                    const rowObj = {};
+                    let hasData = false;
+                    headerRow.forEach((colName, colIndex) => {
+                        if (colName) {
+                            rowObj[colName] = rowArray[colIndex];
+                            if (rowArray[colIndex] !== undefined && rowArray[colIndex] !== null && String(rowArray[colIndex]).trim() !== '') {
+                                hasData = true;
+                            }
+                        }
+                    });
+                    if (hasData) jsonData.push(rowObj);
+                }
+
+                if (jsonData.length === 0) {
+                    this.showNotification('⚠️ لا يوجد بيانات للطلاب تحت العناوين');
                     return;
                 }
 
@@ -2752,48 +2782,74 @@ ${link}
                 let importedCount = 0;
 
                 jsonData.forEach((row, index) => {
-                    // Robust Helper: Match headers ignoring spaces, case, and Arabic Hamzas
                     const getVal = (possibleHeaders) => {
                         const normalize = (s) => String(s || '').trim().replace(/[أإآ]/g, 'ا').toLowerCase();
                         const normalizedPossible = possibleHeaders.map(normalize);
-
-                        // Find first matching key in row
                         const actualKey = Object.keys(row).find(rk => normalizedPossible.includes(normalize(rk)));
                         return actualKey !== undefined ? String(row[actualKey]).trim() : '';
                     };
 
-                    const trackValue = getVal(['المسار', 'مسار', 'النباهة', 'Track']);
+                    // Prioritize 'نوع الدراسة' because 'نوع القسم' in the financial export just says 'بنين/بنات'
+                    const trackValue = getVal(['نوع الدراسة', 'نوع الدراسه', 'المسار', 'مسار', 'Track']) || getVal(['نوع القسم']);
                     const trackLower = trackValue.toLowerCase();
                     let assignedContractId = null;
 
-                    if (trackLower.includes('دبلوم') || trackLower.includes('diploma')) {
+                    if (trackLower.includes('دبلوم') || trackLower.includes('عالمي')) {
                         assignedContractId = diplomaContractId;
-                    } else if (trackLower.includes('أهلي') || trackLower.includes('اهلي') || trackLower.includes('ثنائي') || trackLower.includes('national') || trackLower.includes('bilingual')) {
+                    } else if (trackLower.includes('أهلي') || trackLower.includes('اهلي') || trackLower.includes('ثنائي') || trackLower.includes('عام') || trackLower.includes('نظامي')) {
+                        assignedContractId = nationalContractId;
+                    } else if (trackLower.includes('بنين') || trackLower.includes('بنات')) {
+                        // Section info as fallback
                         assignedContractId = nationalContractId;
                     }
 
-                    // Collect custom fields
+                    // Parse Level and Grade handling combined case like 'المرحلة - الصف'
+                    let parsedLevel = getVal(['المرحلة', 'المرحله', 'Level']);
+                    let parsedGrade = getVal(['الصف', 'الصف الدراسي', 'Grade']);
+                    const levelGradeCombined = getVal(['المرحلة - الصف']);
+
+                    if (!parsedGrade && levelGradeCombined) {
+                        parsedGrade = levelGradeCombined;
+                    }
+                    if (!parsedLevel && levelGradeCombined) {
+                        if (levelGradeCombined.includes('تمهيدي') || levelGradeCombined.includes('روض')) parsedLevel = 'رياض أطفال';
+                        else if (levelGradeCombined.includes('ابتدائي')) parsedLevel = 'الابتدائية';
+                        else if (levelGradeCombined.includes('متوسط')) parsedLevel = 'المتوسطة';
+                        else if (levelGradeCombined.includes('ثانوي')) parsedLevel = 'الثانوية';
+                        else parsedLevel = levelGradeCombined;
+                    }
+
+                    // Collect custom fields from user config dynamically mapping
                     const customFields = {};
                     (settings.customFields || []).forEach(fieldDef => {
                         const val = getVal([fieldDef.label]);
                         if (val) customFields[fieldDef.id] = val;
                     });
 
+                    const phoneValue = getVal(['رقم الواتساب', 'رقم الواتس', 'الجوال', 'رقم الجوال', 'WhatsApp', 'Phone', 'جوال الأب 1', 'جوال الاب 1', 'جوال الأب', 'جوال الاب']) || getVal(['جوال الأب 2', 'جوال الاب 2', 'جوال الأم', 'جوال الام']);
+
+                    let regType = 'existing';
+                    const rawRegType = getVal(['حالة الطالب', 'نوع التسجيل', 'Registration']);
+                    if (rawRegType.includes('مستجد') || rawRegType.includes('جديد')) {
+                        regType = 'mustajid';
+                    }
+
+                    // Strict matching for National ID to avoid 'رقم الطالب' (internal ID)
                     const student = {
-                        studentId: Date.now().toString() + index, // Temp ID
+                        id: Date.now().toString() + index, // Temp ID
                         studentName: getVal(['اسم الطالب', 'الاسم', 'Name']),
-                        parentName: getVal(['اسم ولي الأمر', 'اسم ولي الامر', 'ولي الأمر', 'ولي الامر', 'Parent Name', 'Parent']),
-                        parentEmail: getVal(['البريد الإلكتروني', 'البريد الالكتروني', 'الإيميل', 'الايميل', 'Email']),
-                        parentWhatsapp: getVal(['رقم الواتساب', 'رقم الواتس', 'الجوال', 'رقم الجوال', 'WhatsApp', 'Phone']),
-                        studentLevel: getVal(['المرحلة', 'المرحله', 'Level']),
-                        studentGrade: getVal(['الصف', 'الصف الدراسي', 'Grade']),
-                        studentTrack: trackValue,
-                        nationalId: getVal(['هوية الطالب', 'هوية الطالب', 'الهوية', 'سجل المدني', 'الرقم القومي', 'National ID', 'Id']),
-                        parentNationalId: getVal(['هوية ولي الأمر', 'هوية ولي الامر', 'سجل ولي الأمر', 'Parent ID', 'ParentID']),
+                        parentName: getVal(['اسم ولي الأمر', 'اسم ولي الامر', 'اسم الاب', 'اسم الأب', 'ولي الأمر', 'ولي الامر', 'Parent Name', 'Parent']) || 'ولي أمر الطالب ' + getVal(['اسم الطالب', 'الاسم']),
+                        parentEmail: getVal(['البريد الإلكتروني', 'البريد الالكتروني', 'الإيميل', 'الايميل', 'Email']) || 'lamyojad@email.com',
+                        parentWhatsapp: phoneValue || '00000000',
+                        studentLevel: parsedLevel || 'غير محدد',
+                        studentGrade: parsedGrade || 'غير محدد',
+                        studentTrack: trackValue || 'عام',
+                        nationalId: getVal(['هوية الطالب', 'رقم هوية الطالب', 'National ID']) || getVal(['رقم الهوية']),
+                        parentNationalId: getVal(['رقم هوية الأب', 'رقم هوية الاب', 'هوية ولي الأمر', 'هوية ولي الامر', 'سجل ولي الأمر', 'Parent ID', 'ParentID']),
                         contractYear: getVal(['السنة الدراسية', 'السنه الدراسيه', 'السنة', 'Year']) || new Date().getFullYear().toString(),
                         sendMethod: getVal(['طريقة الإرسال', 'طريقة الارسال', 'SendMethod']) || 'whatsapp',
-                        registrationType: (getVal(['نوع التسجيل']).includes('قديم') || getVal(['نوع التسجيل']).includes('منتظم')) ? 'existing' : 'mustajid',
-                        nationality: getVal(['الجنسية', 'Nationality']) || 'سعودي',
+                        registrationType: regType,
+                        studentNationality: getVal(['جنسية الطالب', 'الجنسية', 'Nationality']) || 'سعودي',
                         contractStatus: 'pending',
                         contractTemplateId: assignedContractId,
                         customFields: customFields
@@ -2938,30 +2994,33 @@ ${link}
                 return;
             }
 
-            // بناء نموذج الإكسل بشكل ديناميكي ليتطابق مع حقول المنصة
+            // بناء نموذج الإكسل ليتطابق تماماً مع حقول الإضافة اليدوية في المنصة
             const settings = db.getSettings();
             const rowData = {
                 'اسم الطالب': 'محمد أحمد علي',
-                'هوية الطالب': '1234567890',
-                'المسار': 'مسار ثنائي اللغة',
-                'المرحلة': 'الابتدائية',
-                'الصف': 'الصف الأول',
+                'الجنسية': 'سعودي',
+                'المسار التعليمي': 'مسار ثنائي اللغة',
+                'المرحلة الدراسية': 'الابتدائية',
+                'الصف الدراسي': 'الصف الأول',
+                'هوية الطالب': '1111111111',
                 'اسم ولي الأمر': 'أحمد علي',
                 'هوية ولي الأمر': '1020304050',
                 'البريد الإلكتروني': 'parent@example.com',
                 'رقم الواتساب': '966500000000',
-                'الجنسية': 'سعودي',
-                'نوع التسجيل': 'مستجد', // أو 'منتظم'
                 'طريقة الإرسال': 'whatsapp',
+                'نوع التسجيل': 'مستجد', // أو منتظم
                 'السنة الدراسية': '2024-2025'
             };
 
-            // إضافة الحقول المخصصة (مثل رقم الهوية) تلقائياً إلى النموذج
+            // إضافة الحقول المخصصة تلقائياً إلى النموذج
             const customHeaders = [];
             if (settings.customFields && Array.isArray(settings.customFields)) {
                 settings.customFields.forEach(field => {
-                    rowData[field.label] = `(مثال: ${field.label})`;
-                    customHeaders.push({ wch: 20 });
+                    // Skip if the user left duplicate 'nationalId' or 'parentNationalId' custom fields since they are now core
+                    if (field.id !== 'nationalId' && field.id !== 'parentNationalId') {
+                        rowData[field.label] = `(مثال: ${field.label})`;
+                        customHeaders.push({ wch: 20 });
+                    }
                 });
             }
 
@@ -2973,7 +3032,8 @@ ${link}
 
             worksheet['!dir'] = 'rtl';
             const standardCols = [
-                { wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
+                { wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 20 },
+                { wch: 20 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
             ];
             worksheet['!cols'] = [...standardCols, ...customHeaders];
 
@@ -3002,21 +3062,7 @@ ${link}
         }
     },
 
-    switchSettingsTab(tabId) {
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-
-        const targetTab = document.getElementById(`tab-${tabId}`);
-        if (targetTab) targetTab.classList.add('active');
-
-        // Find button by its onclick which contains tabId
-        const targetBtn = document.querySelector(`.tab-btn[onclick*="'${tabId}'"]`);
-        if (targetBtn) targetBtn.classList.add('active');
-
-        if (tabId === 'migration') {
-            this.refreshArchiveTable();
-        }
-    },
+    // (Removed duplicate switchSettingsTab here)
 
     async startMigration() {
         const nextYear = document.getElementById('nextYearLabel').value.trim();
@@ -3057,13 +3103,13 @@ ${link}
         }
     },
 
-    unarchiveStudent(id) {
+    async unarchiveStudent(id) {
         if (!confirm('هل تريد إعادة هذا الطالب للقائمة النشطة؟')) return;
         const students = db.getStudents(true);
         const student = students.find(s => String(s.id) === String(id));
         if (student) {
             student.isArchived = false;
-            db.saveStudent(student); // This handles both local and cloud sync
+            await db.saveStudent(student); // Await async save
             this.renderStudents();
             this.refreshArchiveTable();
             this.updateStats();
@@ -3252,10 +3298,19 @@ ${link}
             contractYear: hist.contractYear
         };
 
-        if (hist.contractType === 'pdf_template' || (hist.contractType === 'pdf' && hist.pdfData)) {
+        if (hist.contractType === 'pdf_template' || (hist.contractType === 'pdf' && (hist.pdfData || student.pdfData))) {
             // Regeneration for PDF Template History
             try {
                 if (typeof contractMgr === 'undefined') throw new Error('Contract Manager not found');
+
+                // Fallback: If history doesn't have PDF data, try to get it from the original template
+                let pdfData = hist.pdfData;
+                if (!pdfData && hist.contractTemplateId) {
+                    console.log('🔄 Attempting to recover PDF data from original template:', hist.contractTemplateId);
+                    pdfData = await contractMgr.getPdfFromDB(hist.contractTemplateId);
+                }
+
+                if (!pdfData) throw new Error("بيانات الـ PDF غير متوفرة في السجل أو القالب الأصلي");
 
                 // Construct a mock template object from history
                 const mockTemplate = {
@@ -3263,7 +3318,7 @@ ${link}
                     title: hist.contractTitle,
                     content: hist.contractContent,
                     type: 'pdf_template',
-                    pdfData: hist.pdfData,
+                    pdfData: pdfData,
                     pdfFields: hist.pdfFields || []
                 };
 
@@ -3353,25 +3408,29 @@ document.addEventListener('DOMContentLoaded', () => {
     UI.initTheme();  // Initialize Dark Mode
     UI.applyBranding(); // Apply school identity
 
-    // 2. Tab Navigation
-    const navLinks = document.querySelectorAll('.nav-link');
+    // 2. Tab Navigation logic (Combined Desktop & Mobile)
+    const allNavLinks = document.querySelectorAll('.nav-link, .mobile-nav-item');
     const pages = document.querySelectorAll('.page');
 
-    navLinks.forEach(link => {
+    allNavLinks.forEach(link => {
         link.addEventListener('click', (e) => {
             try {
                 e.preventDefault();
                 const pageId = link.dataset.page;
-                // ... same logic as before ...
                 if (!pageId) return;
 
-                navLinks.forEach(l => l.classList.remove('active'));
-                link.classList.add('active');
+                // 1. Remove active state from ALL links (top and bottom)
+                allNavLinks.forEach(l => l.classList.remove('active'));
 
+                // 2. Add active state to all links matching this page (Sync desktop/mobile)
+                document.querySelectorAll(`[data-page="${pageId}"]`).forEach(l => l.classList.add('active'));
+
+                // 3. Switch page
                 pages.forEach(p => p.classList.remove('active'));
                 const targetPage = document.getElementById(`${pageId}-page`);
                 if (targetPage) targetPage.classList.add('active');
 
+                // 4. Load page-specific data
                 if (pageId === 'dashboard' || pageId === 'students') {
                     UI.renderStudents();
                     UI.updateStats();
@@ -3379,7 +3438,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     UI.loadSettingsPage();
                 }
 
-            } catch (e) { console.error(e); }
+                // 5. Scroll to top when switching pages on mobile
+                window.scrollTo(0, 0);
+
+            } catch (err) { console.error('Navigation Error:', err); }
         });
     });
 
@@ -3434,7 +3496,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const studentForm = document.getElementById('studentForm');
     if (studentForm) {
-        studentForm.addEventListener('submit', (e) => {
+        studentForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const editingId = studentForm.dataset.editingId;
             const existingStudent = editingId ? db.getStudents().find(s => String(s.id) === String(editingId)) : null;
@@ -3487,7 +3549,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 createdAt: existingStudent?.createdAt || new Date().toISOString()
             };
 
-            db.saveStudent(studentData);
+            await db.saveStudent(studentData); // Await async save
             UI.closeModal();
             UI.renderStudents();
             UI.updateStats();
